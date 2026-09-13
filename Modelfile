@@ -1,0 +1,52 @@
+# ============================================================
+# Neuro Voice AI 用 Modelfile
+#   モデル : gemma-4-12b-it  (Unsloth Dynamic Q5_K_XL 量子化 GGUF)
+#   用途   : リアルタイム音声会話 (低遅延・短い話し言葉)
+#   作成   : ollama create gemma4-12b -f Modelfile
+# ------------------------------------------------------------
+# 注意: PARAMETER 行に行末インラインコメント (値 # ...) は書けない。
+#       Ollama がコメントごと値として読み取りエラーになるため、
+#       コメントは必ず独立した行 (# で始まる行) に書くこと。
+# ============================================================
+
+FROM ./gemma-4-12b-it-UD-Q5_K_XL.gguf
+
+# --- チャットテンプレート (Gemma 系) --------------------------
+# 重要: Gemma 標準テンプレートは system ロールを渡すと例外で拒否する。
+# アプリ(config.yaml persona)は system メッセージでペルソナを送るので、
+# system を user ターンに畳み込むテンプレートを使い、確実に反映させる。
+# これを怠ると「本文が空」になる原因になり得る。
+TEMPLATE """{{- range $i, $_ := .Messages }}
+{{- $last := eq (len (slice $.Messages $i)) 1 }}
+{{- if or (eq .Role "user") (eq .Role "system") }}<start_of_turn>user
+{{ .Content }}<end_of_turn>
+{{ if $last }}<start_of_turn>model
+{{ end }}
+{{- else if eq .Role "assistant" }}<start_of_turn>model
+{{ .Content }}{{ if not $last }}<end_of_turn>
+{{ end }}
+{{- end }}
+{{- end }}"""
+
+# --- 生成パラメータ ------------------------------------------
+# 値は Gemma 公式推奨 (temp 1.0 / top_k 64 / top_p 0.95 / min_p 0 /
+# repeat_penalty 1.0)。アプリは毎リクエストで temperature=0.7 と
+# max_tokens を送るため実運用ではそちらが優先される。下記は
+# `ollama run` 単体テスト時と、アプリが指定しない項目に効く。
+#
+# num_ctx 4096 : 音声会話の短いやり取り+20往復履歴に十分。KVキャッシュを抑えGPU載りきりを優先。
+# num_predict 1024 : 1応答の最大トークン (config.yaml の max_tokens と一致)。
+# repeat_penalty : Gemma は 1.0 推奨。上げすぎ (>1.2) は不自然になる。
+PARAMETER stop "<end_of_turn>"
+PARAMETER stop "<start_of_turn>"
+PARAMETER num_ctx 4096
+PARAMETER num_predict 1024
+PARAMETER temperature 1.0
+PARAMETER top_p 0.95
+PARAMETER top_k 64
+PARAMETER min_p 0.0
+PARAMETER repeat_penalty 1.0
+
+# --- フォールバック用ペルソナ --------------------------------
+# 通常はアプリが system メッセージで上書きする。`ollama run` 単体テスト用。
+SYSTEM """あなたは「Neuro」という名前の明るく好奇心旺盛なAIアシスタント。音声で会話しているので、1〜3文の短い話し言葉で自然に答える。絵文字・記号・箇条書きは使わない。"""

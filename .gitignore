@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.env
+logs/
+models/
+data/
+*.wav
+.venv/
+venv/
+discord_receiver/node_modules/

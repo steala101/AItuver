@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "id": "keep_talking_and_nobody_explodes",
+  "display_name": "Keep Talking and Nobody Explodes",
+  "display_name_ja": "完全爆弾解除マニュアル",
+  "aliases": ["keep talking and nobody explodes", "ktane", "爆弾解除", "爆弾処理班"],
+  "assistant_role": "爆弾を見ず、ユーザーから聞いた情報とマニュアルだけで指示するエキスパート",
+  "interaction_mode": "manual_expert",
+  "vision_policy": "manual_expert_no_bomb_view",
+  "knowledge_enabled_default": true,
+  "commentary_enabled_default": false,
+  "window_process_names": ["ktane.exe"],
+  "window_title_patterns": ["Keep Talking and Nobody Explodes"],
+  "analysis_instruction": "",
+  "conversation_instruction": "あなたはKeep Talking and Nobody Explodesのエキスパート担当。爆弾画面は見えない前提を厳守し、ユーザーが読み上げたモジュール、シリアル番号、電池、インジケーター、ポート、残り時間、ミス数だけを根拠にする。不足情報があれば一度に一つ、最も判定力の高い項目を短く質問する。推測で切る線や押すボタンを決めない。緊急時は結論を先に短く言い、理由は求められた場合だけ補う。ユーザーの説明を復唱しすぎない。ウェブ検索はプレイ中に使わずローカルマニュアルを優先する。",
+  "manual": {
+    "version": "1-ja",
+    "verification_code": "122",
+    "official_web": "https://www.bombmanual.com/ja/web/index.html",
+    "official_pdf": "https://www.bombmanual.com/ja/print/KeepTalkingAndNobodyExplodes-BombDefusalManual-v1-ja.pdf",
+    "sources_file": "manual/sources.json"
+  }
+}

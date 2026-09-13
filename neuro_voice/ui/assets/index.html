@@ -1,0 +1,4200 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>Neuro Voice AI</title>
+<style>
+  :root {
+    --bg0: #0a0d16;
+    --bg1: #10152a;
+    --glass: rgba(255, 255, 255, 0.045);
+    --glass-border: rgba(255, 255, 255, 0.09);
+    --text: #e6e9f2;
+    --text-dim: #8b93ab;
+    --cyan: #22d3ee;
+    --violet: #a78bfa;
+    --pink: #f472b6;
+    --green: #4ade80;
+    --red: #f87171;
+    --radius: 18px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    font-family: "Segoe UI", "Yu Gothic UI", "Hiragino Sans", sans-serif;
+    color: var(--text);
+    background:
+      radial-gradient(1000px 500px at 80% -10%, rgba(167,139,250,0.13), transparent 60%),
+      radial-gradient(800px 500px at -10% 110%, rgba(34,211,238,0.10), transparent 60%),
+      linear-gradient(160deg, var(--bg0), var(--bg1));
+    overflow: hidden;
+    user-select: none;
+  }
+  #app { display: flex; flex-direction: column; height: 100vh; padding: 18px 22px; gap: 14px; }
+
+  /* ===== ヘッダー ===== */
+  header {
+    display: flex; align-items: center; gap: 16px;
+    padding: 14px 20px;
+    background: var(--glass);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius);
+    backdrop-filter: blur(14px);
+  }
+  .orb-wrap { position: relative; width: 52px; height: 52px; flex: none; }
+  .orb {
+    position: absolute; inset: 6px; border-radius: 50%;
+    background: radial-gradient(circle at 32% 30%, #7dd3fc, var(--cyan) 55%, #0891b2);
+    box-shadow: 0 0 18px rgba(34,211,238,0.55);
+    transition: background 0.4s, box-shadow 0.4s, transform 0.09s ease-out;
+  }
+  .orb-ring {
+    position: absolute; inset: 0; border-radius: 50%;
+    border: 2px solid rgba(34,211,238,0.35);
+    animation: spin 6s linear infinite;
+    border-top-color: transparent; border-left-color: transparent;
+    transition: border-color 0.4s;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .orb.thinking { background: radial-gradient(circle at 32% 30%, #c4b5fd, var(--violet) 55%, #6d28d9); box-shadow: 0 0 20px rgba(167,139,250,0.6); animation: breathe 1.2s ease-in-out infinite; }
+  .orb.speaking { background: radial-gradient(circle at 32% 30%, #f9a8d4, var(--pink) 55%, #be185d); box-shadow: 0 0 22px rgba(244,114,182,0.6); }
+  .orb.idle     { background: radial-gradient(circle at 32% 30%, #64748b, #475569 55%, #1e293b); box-shadow: none; }
+  .orb.loading  { background: radial-gradient(circle at 32% 30%, #94a3b8, #64748b 55%, #334155); animation: breathe 1.6s ease-in-out infinite; }
+  @keyframes breathe { 50% { transform: scale(1.12); } }
+
+  /* ===== 疑似感情 (喜怒哀楽でオーブの色が変わる) =====
+     将来はアバターの表情制御に置き換える予定 */
+  .orb.emo-joy       { background: radial-gradient(circle at 32% 30%, #fde68a, #fbbf24 55%, #b45309); box-shadow: 0 0 24px rgba(251,191,36,0.65); }
+  .orb.emo-fun       { background: radial-gradient(circle at 32% 30%, #86efac, #4ade80 55%, #15803d); box-shadow: 0 0 24px rgba(74,222,128,0.6); }
+  .orb.emo-angry     { background: radial-gradient(circle at 32% 30%, #fca5a5, #f87171 55%, #b91c1c); box-shadow: 0 0 24px rgba(248,113,113,0.65); }
+  .orb.emo-sad       { background: radial-gradient(circle at 32% 30%, #93c5fd, #60a5fa 55%, #1d4ed8); box-shadow: 0 0 24px rgba(96,165,250,0.6); }
+  .orb.emo-surprised { background: radial-gradient(circle at 32% 30%, #fdba74, #fb923c 55%, #c2410c); box-shadow: 0 0 24px rgba(251,146,60,0.65); }
+
+  .title-block { flex: 1; min-width: 0; }
+  h1 { font-size: 17px; font-weight: 600; letter-spacing: 3px; }
+  h1 .accent { color: var(--cyan); }
+  #stateLabel { font-size: 12.5px; color: var(--text-dim); margin-top: 2px; letter-spacing: 1px; }
+
+  .header-right { display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+  .chip {
+    font-size: 11px; color: var(--text-dim);
+    padding: 5px 12px; border-radius: 999px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid var(--glass-border);
+    white-space: nowrap;
+  }
+  .chip b { color: var(--text); font-weight: 600; }
+  .chip.tts-chip {
+    font-family: inherit; cursor: pointer; color: var(--text-dim);
+    transition: border-color .18s, background .18s, color .18s;
+  }
+  .chip.tts-chip:hover, .chip.tts-chip[aria-expanded="true"] {
+    border-color: rgba(34,211,238,.5); background: rgba(34,211,238,.09);
+    color: var(--cyan);
+  }
+  .chip.tts-chip.switching { opacity: .65; cursor: wait; }
+  .tts-pop {
+    position: fixed; top: 88px; right: 28px; z-index: 250;
+    width: 285px; padding: 12px;
+    border: 1px solid rgba(34,211,238,.25); border-radius: 14px;
+    background: rgba(13,18,36,.98); box-shadow: 0 16px 45px rgba(0,0,0,.42);
+    backdrop-filter: blur(16px);
+  }
+  .tts-pop.hidden { display: none; }
+  .tts-pop-title { font-size: 11px; color: var(--text-dim); letter-spacing: 1px; margin: 0 4px 8px; }
+  .tts-option {
+    display: flex; width: 100%; align-items: center; justify-content: space-between;
+    padding: 9px 11px; margin-top: 5px; border-radius: 9px;
+    border: 1px solid transparent; background: rgba(255,255,255,.04);
+    color: var(--text); font-family: inherit; font-size: 12px; cursor: pointer;
+  }
+  .tts-option:hover { background: rgba(255,255,255,.08); }
+  .tts-option.active { border-color: rgba(34,211,238,.45); color: var(--cyan); }
+  .tts-option:disabled { opacity: .5; cursor: wait; }
+  .tts-option small { color: var(--text-dim); }
+  .tts-volume-box { margin-top: 11px; padding: 10px 5px 2px; border-top: 1px solid var(--glass-border); }
+  .tts-volume-head { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-dim); }
+  #ttsVolumeValue { color: var(--cyan); }
+  #ttsVolumeSlider { width: 100%; margin-top: 9px; accent-color: var(--cyan); cursor: pointer; }
+
+  .speaker-row { display: flex; gap: 8px; align-items: center; }
+  .speaker-row label { font-size: 11px; color: var(--text-dim); letter-spacing: 1px; }
+  #speakerSel {
+    appearance: none; -webkit-appearance: none;
+    font-family: inherit; font-size: 12px; color: var(--text);
+    background: rgba(255,255,255,0.06);
+    border: 1px solid var(--glass-border);
+    border-radius: 999px; padding: 6px 30px 6px 14px;
+    cursor: pointer; outline: none; max-width: 230px;
+    background-image: url("data:image/svg+xml;charset=utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%238b93ab' stroke-width='1.5' fill='none'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 12px center;
+    transition: border-color 0.2s;
+  }
+  #speakerSel:hover, #speakerSel:focus { border-color: rgba(34,211,238,0.45); }
+  #speakerSel option { background: var(--bg1); color: var(--text); }
+  #speakerSel:disabled { opacity: 0.45; cursor: default; }
+  .mini {
+    width: 30px; height: 30px; flex: none; border-radius: 50%;
+    border: 1px solid var(--glass-border);
+    background: rgba(255,255,255,0.06); color: var(--text-dim);
+    font-size: 14px; cursor: pointer; display: grid; place-items: center;
+    transition: all 0.18s;
+  }
+  .mini:hover { background: rgba(255,255,255,0.12); color: var(--cyan); transform: rotate(90deg); }
+  .mini.spinning { animation: spin 0.8s linear infinite; }
+  .mini-wide {
+    height: 30px; padding: 0 12px; flex: none; border-radius: 999px;
+    border: 1px solid var(--glass-border);
+    background: rgba(255,255,255,0.06); color: var(--text-dim);
+    font-family: inherit; font-size: 11px; letter-spacing: 1px;
+    cursor: pointer; transition: all 0.18s; white-space: nowrap;
+  }
+  .mini-wide:hover { background: rgba(255,255,255,0.12); color: var(--text); }
+  .mini-wide.gpu { border-color: rgba(74,222,128,0.45); color: var(--green); }
+  .mini-wide.cpu { border-color: rgba(251,191,36,0.45); color: #fbbf24; }
+
+  /* ===== チャット ===== */
+  #chat {
+    flex: 1; overflow-y: auto;
+    padding: 18px;
+    background: var(--glass);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius);
+    backdrop-filter: blur(14px);
+    display: flex; flex-direction: column; gap: 12px;
+    scroll-behavior: smooth;
+  }
+  #chat::-webkit-scrollbar { width: 8px; }
+  #chat::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 4px; }
+
+  .msg { max-width: 76%; padding: 11px 16px; border-radius: 16px; line-height: 1.65; font-size: 14px; animation: fadeIn 0.25s ease-out; word-break: break-word; user-select: text; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } }
+  .msg.user {
+    align-self: flex-end;
+    background: linear-gradient(135deg, rgba(34,211,238,0.16), rgba(34,211,238,0.07));
+    border: 1px solid rgba(34,211,238,0.28);
+    border-bottom-right-radius: 5px;
+  }
+  .msg.user.partial { opacity: 0.55; font-style: italic; }
+  .msg.user .tone {
+    font-size: 10px; color: rgba(34,211,238,0.75); margin-top: 5px;
+    letter-spacing: 0.5px; text-align: right;
+  }
+  .msg.user .who {
+    font-size: 11px; color: var(--cyan); letter-spacing: 2px;
+    margin-bottom: 4px; font-weight: 600; text-align: right;
+  }
+
+  /* Discord経由の発話 (ブランドカラーの青紫で区別) */
+  .msg.user.discord {
+    background: linear-gradient(135deg, rgba(88,101,242,0.22), rgba(88,101,242,0.08));
+    border: 1px solid rgba(88,101,242,0.5);
+  }
+  .msg.user.discord .who { color: #8b9cf9; }
+  .msg.ai.discord {
+    border-color: rgba(88,101,242,0.45);
+    background: rgba(88,101,242,0.08);
+  }
+  .msg.ai.discord .name { color: #8b9cf9; }
+
+  /* はなし相手カード */
+  .spk-row {
+    display: flex; align-items: center; gap: 10px; padding: 6px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 12.5px;
+  }
+  .spk-row:last-child { border-bottom: none; }
+  .spk-row .nm { font-weight: 600; }
+  .spk-row .badge {
+    font-size: 9.5px; padding: 1px 8px; border-radius: 999px;
+    border: 1px solid rgba(251,191,36,0.5); color: #fbbf24;
+  }
+  .spk-row .badge.rel {
+    border-color: rgba(244,114,182,0.55); color: #f472b6;
+  }
+  .spk-row .meta { margin-left: auto; font-size: 10.5px; color: var(--text-dim); }
+  .spk-relbar {
+    width: 60px; flex: none; height: 6px; border-radius: 999px;
+    background: rgba(255,255,255,0.08); overflow: hidden;
+  }
+  .spk-relbar i {
+    display: block; height: 100%;
+    background: linear-gradient(90deg, #f472b6, #ec4899);
+  }
+  .spk-btn {
+    width: 26px; height: 26px; flex: none; border-radius: 8px;
+    border: 1px solid var(--glass-border); cursor: pointer;
+    background: rgba(255,255,255,0.05); color: var(--text-dim);
+    font-size: 12px; display: grid; place-items: center; transition: all 0.15s;
+  }
+  .spk-btn:hover { color: var(--cyan); background: rgba(255,255,255,0.1); }
+  .spk-btn.del:hover { color: var(--red); }
+  .msg.ai {
+    align-self: flex-start;
+    background: rgba(255,255,255,0.055);
+    border: 1px solid var(--glass-border);
+    border-bottom-left-radius: 5px;
+  }
+  .msg.ai .name { font-size: 11px; color: var(--violet); letter-spacing: 2px; margin-bottom: 4px; font-weight: 600; }
+  .msg.ai.streaming .body::after { content: "▌"; color: var(--cyan); animation: blink 0.9s step-start infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .msg .lat { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+  .lat span { font-size: 10px; color: var(--text-dim); background: rgba(255,255,255,0.06); padding: 2px 8px; border-radius: 999px; }
+  .lat span.total { color: var(--cyan); border: 1px solid rgba(34,211,238,0.3); }
+  /* AIが見た画面のサムネイル */
+  .shot {
+    align-self: flex-start; max-width: 240px;
+    border: 1px solid rgba(167,139,250,0.4); border-radius: 12px;
+    padding: 6px; background: rgba(167,139,250,0.06);
+    cursor: zoom-in; animation: fadeIn 0.25s ease-out;
+    transition: border-color 0.18s, transform 0.18s;
+  }
+  .shot.obs-visual { max-width: min(520px, 76%); }
+  .shot:hover { border-color: rgba(167,139,250,0.8); transform: scale(1.02); }
+  .shot img { display: block; width: 100%; border-radius: 8px; }
+  .shot .cap {
+    font-size: 10px; color: var(--violet); letter-spacing: 1px;
+    margin: 5px 2px 1px; display: flex; justify-content: space-between;
+  }
+  .shot .cap small { color: var(--text-dim); }
+  /* 再生中の動画カード (チャット内) */
+  .video-card {
+    align-self: flex-start; width: 340px; max-width: 82%;
+    border: 1px solid rgba(88,101,242,0.5); border-radius: 12px;
+    padding: 8px; background: rgba(88,101,242,0.08);
+    animation: fadeIn 0.25s ease-out;
+  }
+  .video-card .vhead {
+    display: flex; align-items: center; gap: 8px; margin-bottom: 6px;
+  }
+  .video-card .vtitle {
+    flex: 1; font-size: 11.5px; color: var(--text);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .video-card .vbtn {
+    flex: none; width: 26px; height: 26px; border-radius: 8px;
+    border: 1px solid var(--glass-border); cursor: pointer;
+    background: rgba(255,255,255,0.05); color: var(--text-dim);
+    font-size: 12px; display: grid; place-items: center;
+  }
+  .video-card .vbtn:hover { color: var(--cyan); background: rgba(255,255,255,0.1); }
+  .video-card .vwrap {
+    position: relative; width: 100%; aspect-ratio: 16 / 9;
+    border-radius: 8px; overflow: hidden; cursor: pointer;
+    background: rgba(0,0,0,0.4);
+  }
+  .video-card .vwrap iframe { width: 100%; height: 100%; border: 0; }
+  .video-card .vwrap .vshield { position: absolute; inset: 0; }  /* ダブルクリック捕捉用 */
+  .video-card .vcap { font-size: 10px; color: var(--text-dim); margin-top: 5px; letter-spacing: 1px; }
+  /* 埋め込み不可時の音声のみフォールバック */
+  .video-card .vwrap.audio-only {
+    aspect-ratio: auto; height: auto; padding: 10px;
+    display: flex; align-items: center; cursor: default;
+  }
+  .video-card .vwrap.audio-only audio { width: 100%; height: 36px; }
+
+  /* 画面表示OFF (音だけ再生を続ける) */
+  .video-card .vwrap.video-hidden {
+    height: 0; aspect-ratio: auto; min-height: 0;
+    border: none; margin: 0;
+  }
+  .video-card .vwrap.video-hidden iframe { visibility: hidden; }
+  /* ローカルプレイヤーの最大化 (同じプレイヤーのまま拡大 → 音が途切れない) */
+  .video-card.maxi {
+    position: fixed; z-index: 70;
+    left: 50%; top: 50%; transform: translate(-50%, -50%);
+    width: min(86vw, calc(78vh * 16 / 9)); max-width: none;
+    box-shadow: 0 24px 80px rgba(0,0,0,0.7);
+    background: rgba(14,18,34,0.98);
+  }
+
+  #videoOverlay { cursor: zoom-out; }
+  #videoOverlay .vbig {
+    width: min(86vw, calc(80vh * 16 / 9)); aspect-ratio: 16 / 9;
+    border-radius: 14px; overflow: hidden;
+    border: 1px solid var(--glass-border);
+    box-shadow: 0 24px 80px rgba(0,0,0,0.6);
+  }
+  #videoOverlay iframe { width: 100%; height: 100%; border: 0; }
+  #videoOverlay .shot-note {
+    position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%);
+    font-size: 12px; color: var(--text-dim); letter-spacing: 1px;
+    background: rgba(10,13,22,0.8); padding: 6px 16px; border-radius: 999px;
+    border: 1px solid var(--glass-border);
+  }
+
+  #shotOverlay { cursor: zoom-out; }
+  #shotOverlay img {
+    max-width: 92vw; max-height: 88vh; border-radius: 14px;
+    border: 1px solid var(--glass-border);
+    box-shadow: 0 24px 80px rgba(0,0,0,0.6);
+  }
+  #shotOverlay .shot-note {
+    position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%);
+    font-size: 12px; color: var(--text-dim); letter-spacing: 1px;
+    background: rgba(10,13,22,0.8); padding: 6px 16px; border-radius: 999px;
+    border: 1px solid var(--glass-border);
+  }
+
+  .sys {
+    align-self: center; max-width: min(92%, 900px); padding: 6px 14px;
+    font-size: 11.5px; line-height: 1.5; color: var(--text-dim);
+    background: rgba(255,255,255,0.04); border-radius: 12px;
+    animation: fadeIn 0.25s; user-select: text; white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .sys.error { color: var(--red); border: 1px solid rgba(248,113,113,0.3); }
+  .cancelled { opacity: 0.55; }
+
+  /* ===== フッター ===== */
+  footer { display: flex; align-items: center; gap: 12px; }
+  .ctl {
+    width: 52px; height: 52px; flex: none;
+    border-radius: 50%; border: 1px solid var(--glass-border);
+    background: var(--glass); backdrop-filter: blur(14px);
+    color: var(--text); font-size: 20px;
+    cursor: pointer; display: grid; place-items: center;
+    transition: all 0.18s;
+  }
+  .ctl:hover { background: rgba(255,255,255,0.1); transform: translateY(-1px); }
+  .ctl:active { transform: scale(0.94); }
+  #micBtn.on { border-color: rgba(34,211,238,0.55); box-shadow: 0 0 14px rgba(34,211,238,0.25); }
+  #micBtn.off { border-color: rgba(248,113,113,0.55); color: var(--red); }
+  #spkBtn.off { border-color: rgba(248,113,113,0.55); color: var(--red); }
+  #stopBtn:hover { border-color: rgba(248,113,113,0.5); color: var(--red); }
+  #visionBtn.on { border-color: rgba(167,139,250,0.6); box-shadow: 0 0 14px rgba(167,139,250,0.3); }
+  #visionBtn.off { opacity: 0.55; }
+  #searchBtn.on { border-color: rgba(34,211,238,0.6); box-shadow: 0 0 14px rgba(34,211,238,0.3); }
+  #searchBtn.off { opacity: 0.55; }
+  #proactiveBtn.on { border-color: rgba(74,222,128,0.6); box-shadow: 0 0 14px rgba(74,222,128,0.3); }
+  #proactiveBtn.off { opacity: 0.55; }
+  #dcQuickBtn.on { border-color: rgba(88,101,242,0.7); box-shadow: 0 0 14px rgba(88,101,242,0.4); }
+  #dcQuickBtn.off { opacity: 0.55; }
+
+  .input-wrap {
+    flex: 1; display: flex; align-items: center; gap: 10px;
+    background: var(--glass); border: 1px solid var(--glass-border);
+    border-radius: 999px; padding: 6px 8px 6px 20px;
+    backdrop-filter: blur(14px);
+    transition: border-color 0.2s;
+  }
+  .input-wrap:focus-within { border-color: rgba(34,211,238,0.45); }
+  #input {
+    flex: 1; background: none; border: none; outline: none;
+    color: var(--text); font-size: 14px; font-family: inherit;
+  }
+  #input::placeholder { color: var(--text-dim); }
+  #sendBtn {
+    width: 40px; height: 40px; border-radius: 50%; border: none; cursor: pointer;
+    background: linear-gradient(135deg, var(--cyan), #0891b2);
+    color: #06222b; font-size: 16px; display: grid; place-items: center;
+    transition: all 0.18s;
+  }
+  #sendBtn:hover { filter: brightness(1.15); }
+
+  /* 音量メーター */
+  #meter { display: flex; align-items: flex-end; gap: 3px; height: 26px; width: 64px; flex: none; }
+  #meter i { flex: 1; background: linear-gradient(to top, var(--cyan), var(--violet)); border-radius: 2px; height: 8%; transition: height 0.08s ease-out; opacity: 0.85; }
+
+  /* ===== 設定モーダル ===== */
+  .overlay {
+    position: fixed; inset: 0; z-index: 50;
+    background: rgba(5, 7, 14, 0.6); backdrop-filter: blur(6px);
+    display: grid; place-items: center;
+    animation: fadeIn 0.2s;
+  }
+  .overlay.hidden { display: none; }
+  .panel {
+    /* ウィンドウを広げたら設定も横に広がる (狭い時は従来通り480px基準) */
+    width: clamp(480px, 62vw, 1040px); max-width: 94vw; max-height: 88vh;
+    display: flex; flex-direction: column;
+    background: linear-gradient(160deg, rgba(24,30,52,0.95), rgba(14,18,34,0.95));
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius);
+    padding: 22px 26px;
+    box-shadow: 0 24px 60px rgba(0,0,0,0.5);
+  }
+  .panel h2 { font-size: 15px; letter-spacing: 2px; margin-bottom: 14px; color: var(--cyan); }
+
+  /* 設定タブ */
+  .tabs { display: flex; gap: 6px; margin-bottom: 16px; }
+  .tab {
+    flex: 1; font-family: inherit; font-size: 12px; letter-spacing: 1px;
+    padding: 8px 0; cursor: pointer; border-radius: 10px;
+    background: rgba(255,255,255,0.04); color: var(--text-dim);
+    border: 1px solid var(--glass-border);
+    transition: all 0.18s;
+  }
+  .tab:hover { color: var(--text); }
+  .tab.active {
+    color: var(--cyan); border-color: rgba(34,211,238,0.5);
+    background: rgba(34,211,238,0.08);
+  }
+  .tabpage { overflow-y: auto; padding-right: 4px; flex: 1; min-height: 0; }
+  .tabpage.hidden { display: none; }
+  .tabpage::-webkit-scrollbar { width: 8px; }
+  .tabpage::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 4px; }
+
+  /* トグルスイッチ */
+  .toggle-row {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px; padding: 9px 2px;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+  }
+  .toggle-row .t-label { font-size: 12.5px; }
+  .toggle-row .t-label small { display: block; font-size: 10.5px; color: var(--text-dim); margin-top: 2px; line-height: 1.5; }
+  .sw { position: relative; width: 42px; height: 23px; flex: none; }
+  .sw input { opacity: 0; width: 0; height: 0; }
+  .sw i {
+    position: absolute; inset: 0; border-radius: 999px; cursor: pointer;
+    background: rgba(255,255,255,0.08); border: 1px solid var(--glass-border);
+    transition: all 0.2s;
+  }
+  .sw i::after {
+    content: ""; position: absolute; top: 2px; left: 2px;
+    width: 17px; height: 17px; border-radius: 50%;
+    background: var(--text-dim); transition: all 0.2s;
+  }
+  .sw input:checked + i { background: rgba(34,211,238,0.3); border-color: rgba(34,211,238,0.6); }
+  .sw input:checked + i::after { left: 21px; background: var(--cyan); box-shadow: 0 0 8px rgba(34,211,238,0.6); }
+
+  /* ペルソナ */
+  .field textarea {
+    width: 100%; min-height: 110px; resize: vertical;
+    font-family: inherit; font-size: 12.5px; line-height: 1.6; color: var(--text);
+    background: rgba(255,255,255,0.06);
+    border: 1px solid var(--glass-border); border-radius: 10px;
+    padding: 9px 12px; outline: none;
+  }
+  .field textarea:focus { border-color: rgba(34,211,238,0.45); }
+  details.preview { margin-bottom: 14px; }
+  details.preview summary { font-size: 11.5px; color: var(--text-dim); cursor: pointer; letter-spacing: 1px; }
+  details.preview pre {
+    margin-top: 8px; padding: 10px 12px; font-size: 11px; line-height: 1.6;
+    color: var(--text-dim); white-space: pre-wrap; word-break: break-word;
+    background: rgba(0,0,0,0.25); border: 1px solid var(--glass-border); border-radius: 10px;
+    max-height: 180px; overflow-y: auto; font-family: Consolas, monospace;
+  }
+
+  /* 感情カラー凡例 */
+  .emo-legend {
+    display: flex; flex-wrap: wrap; gap: 8px 16px;
+    padding: 10px 2px 4px; font-size: 11px; color: var(--text-dim);
+  }
+  .emo-legend span { display: inline-flex; align-items: center; white-space: nowrap; }
+  .emo-legend i {
+    width: 11px; height: 11px; border-radius: 50%;
+    display: inline-block; margin-right: 6px; flex: none;
+    box-shadow: 0 0 6px rgba(255,255,255,0.15);
+  }
+
+  /* オーブクリックで出る感情カラーポップオーバー */
+  .orb-wrap { cursor: pointer; }
+  .emo-pop {
+    position: fixed; top: 84px; left: 30px; z-index: 60;
+    width: 250px; padding: 16px 18px;
+    background: linear-gradient(160deg, rgba(24,30,52,0.97), rgba(14,18,34,0.97));
+    border: 1px solid var(--glass-border); border-radius: 14px;
+    box-shadow: 0 18px 44px rgba(0,0,0,0.5);
+    animation: fadeIn 0.18s ease-out;
+  }
+  .emo-pop.hidden { display: none; }
+  .emo-pop h3 { font-size: 12px; letter-spacing: 2px; color: var(--cyan); margin-bottom: 10px; }
+  .emo-pop .row {
+    display: flex; align-items: center; gap: 9px;
+    font-size: 12px; color: var(--text); padding: 4px 0;
+  }
+  .emo-pop .row i { width: 13px; height: 13px; border-radius: 50%; flex: none; box-shadow: 0 0 8px rgba(255,255,255,0.2); }
+  .emo-pop .row small { color: var(--text-dim); margin-left: auto; font-size: 10.5px; }
+  .emo-pop .sep { border-top: 1px solid rgba(255,255,255,0.08); margin: 8px 0; }
+
+  /* ラジオ選択 (Visionプロバイダ等の排他選択) */
+  .radio-group { display: flex; flex-direction: column; gap: 8px; }
+  .radio {
+    display: flex; align-items: center; gap: 11px;
+    padding: 10px 14px; border-radius: 12px; cursor: pointer;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--glass-border);
+    transition: all 0.18s;
+  }
+  .radio:hover { background: rgba(255,255,255,0.07); }
+  .radio input { accent-color: var(--cyan); flex: none; margin: 0; }
+  .radio span { font-size: 12.5px; display: block; }
+  .radio small { font-size: 10.5px; color: var(--text-dim); display: block; margin-top: 2px; line-height: 1.5; }
+  .radio:has(input:checked) {
+    border-color: rgba(34,211,238,0.55);
+    background: rgba(34,211,238,0.07);
+  }
+
+  /* APIキー入力 */
+  .key-row { display: flex; gap: 8px; align-items: center; }
+  .key-row input { flex: 1; font-family: Consolas, monospace; }
+  .key-eye {
+    width: 34px; height: 34px; flex: none; border-radius: 10px;
+    border: 1px solid var(--glass-border); cursor: pointer;
+    background: rgba(255,255,255,0.06); color: var(--text-dim);
+    font-size: 14px; display: grid; place-items: center; transition: all 0.18s;
+  }
+  .key-eye:hover { color: var(--cyan); background: rgba(255,255,255,0.1); }
+  .field { margin-bottom: 15px; }
+  .field label { display: block; font-size: 11.5px; color: var(--text-dim); letter-spacing: 1px; margin-bottom: 6px; }
+  .field label b { color: var(--cyan); }
+  .field select, .field input[type="text"], .field input[type="number"] {
+    width: 100%; font-family: inherit; font-size: 13px; color: var(--text);
+    background: rgba(255,255,255,0.06);
+    border: 1px solid var(--glass-border); border-radius: 10px;
+    padding: 9px 12px; outline: none;
+    transition: border-color 0.2s;
+  }
+  .field select:focus, .field input:focus { border-color: rgba(34,211,238,0.45); }
+  #setModelSelect { margin-bottom: 8px; }
+  .field select option { background: var(--bg1); }
+  .field input[type="range"] { width: 100%; accent-color: var(--cyan); }
+  .field.two { display: flex; gap: 12px; }
+  .field.two > div { flex: 1; }
+  .hint { font-size: 11px; color: var(--text-dim); line-height: 1.6; margin-bottom: 18px; }
+  .actions { display: flex; gap: 10px; justify-content: flex-end; }
+  .settings-link {
+    appearance: none; border: 0; background: none; padding: 0;
+    color: var(--cyan); font: inherit; font-size: 12px; cursor: pointer;
+    text-decoration: underline; text-underline-offset: 3px;
+  }
+  .settings-link:hover { color: #a5f3fc; }
+  .correction-panel { width: 620px; }
+  .correction-list { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; max-height: 46vh; padding-right: 4px; }
+  .correction-row { display: grid; grid-template-columns: 1fr 20px 1fr 32px; gap: 8px; align-items: center; }
+  .correction-row input { min-width: 0; }
+  .correction-arrow { color: var(--text-dim); text-align: center; }
+  .correction-remove { width: 30px; height: 30px; border-radius: 8px; border: 1px solid var(--glass-border); background: rgba(255,255,255,0.05); color: var(--text-dim); cursor: pointer; }
+  .correction-remove:hover { color: var(--red); border-color: rgba(248,113,113,0.45); }
+  .btn {
+    font-family: inherit; font-size: 13px; cursor: pointer;
+    border-radius: 999px; padding: 9px 22px;
+    transition: all 0.18s;
+  }
+  .btn.ghost { background: none; border: 1px solid var(--glass-border); color: var(--text-dim); }
+  .btn.ghost:hover { color: var(--text); background: rgba(255,255,255,0.06); }
+  .btn.primary { background: linear-gradient(135deg, var(--cyan), #0891b2); border: none; color: #06222b; font-weight: 600; }
+  .btn.primary:hover { filter: brightness(1.15); }
+  /* Discord再招待ボタン (ブランドカラーのブラープル) */
+  .btn.discord {
+    background: linear-gradient(135deg, #5865f2, #4752c4); border: none;
+    color: #fff; font-weight: 600; display: inline-flex; align-items: center; gap: 8px;
+    box-shadow: 0 4px 16px rgba(88,101,242,0.28);
+  }
+  .btn.discord:hover { filter: brightness(1.12); transform: translateY(-1px); }
+  .btn.discord svg { width: 16px; height: 16px; fill: currentColor; }
+
+
+  /* ===== 管理者メニュー: 配線診断 =====
+     「実装がある」と「効いている」は別のこと。ここは後者だけを見せる。 */
+  .diag-panel { width: clamp(720px, 78vw, 1240px); max-width: 96vw; }
+  .diag-head { display: flex; align-items: center; gap: 16px; margin-bottom: 14px; }
+  .diag-ring {
+    width: 58px; height: 58px; border-radius: 50%; flex: none; position: relative;
+    display: grid; place-items: center;
+    background: conic-gradient(var(--diag-ok, #34d399) var(--diag-pct, 0%), rgba(255,255,255,0.07) 0);
+    transition: --diag-pct 0.6s ease;
+  }
+  .diag-ring::after {
+    content: ""; position: absolute; inset: 5px; border-radius: 50%;
+    background: linear-gradient(160deg, rgba(24,30,52,0.98), rgba(14,18,34,0.98));
+  }
+  .diag-ring b { position: relative; z-index: 1; font-size: 15px; font-weight: 700; letter-spacing: -0.5px; }
+  .diag-head .who { flex: 1; min-width: 0; }
+  .diag-head .who h2 { margin: 0; }
+  .diag-sub { font-size: 12px; color: var(--text-dim); margin-top: 4px; letter-spacing: .6px;
+              display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+  .diag-live { display: inline-flex; align-items: center; gap: 5px; }
+  .diag-live i { width: 6px; height: 6px; border-radius: 50%; background: #34d399;
+                 box-shadow: 0 0 8px #34d399; animation: diagPulse 1.8s ease-in-out infinite; }
+  @keyframes diagPulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: .35; transform: scale(.7); } }
+
+  .diag-tally { display: flex; gap: 7px; flex-wrap: wrap; margin-bottom: 14px; }
+  .diag-pill {
+    font-size: 11px; padding: 4px 11px; border-radius: 999px; letter-spacing: .8px;
+    border: 1px solid transparent; display: inline-flex; align-items: center; gap: 6px;
+  }
+  .diag-pill b { font-variant-numeric: tabular-nums; font-size: 12px; }
+  .s-ok           { color: #6ee7b7; background: rgba(52,211,153,0.10); border-color: rgba(52,211,153,0.28); }
+  .s-off          { color: #94a3b8; background: rgba(148,163,184,0.08); border-color: rgba(148,163,184,0.20); }
+  .s-blocked      { color: #cbd5e1; background: rgba(148,163,184,0.06); border-color: rgba(148,163,184,0.16); }
+  .s-disconnected { color: #fbbf24; background: rgba(251,191,36,0.10); border-color: rgba(251,191,36,0.30); }
+  .s-broken       { color: #fca5a5; background: rgba(248,113,113,0.12); border-color: rgba(248,113,113,0.34); }
+  .s-error        { color: #fca5a5; background: rgba(248,113,113,0.12); border-color: rgba(248,113,113,0.34); }
+
+  /* 診断項目は100件を超える。名前・技術キー・説明を同じ入口で探せるようにする。 */
+  .diag-search { display: flex; gap: 8px; align-items: center; margin: 0 0 14px; flex-wrap: wrap; }
+  .diag-search input {
+    flex: 1 1 280px; min-width: 0; padding: 8px 11px; border-radius: 9px;
+    border: 1px solid var(--glass-border); background: rgba(255,255,255,0.045);
+    color: var(--text); font: inherit; font-size: 12px;
+  }
+  .diag-search input:focus { outline: none; border-color: rgba(34,211,238,.65); box-shadow: 0 0 0 3px rgba(34,211,238,.10); }
+  .diag-search .diag-filter { cursor: pointer; white-space: nowrap; }
+  .diag-search .diag-filter.active { color: #fcd34d; border-color: rgba(251,191,36,.45); background: rgba(251,191,36,.10); }
+  .diag-search-count { color: var(--text-dim); font-size: 11px; white-space: nowrap; }
+
+  .diag-alert {
+    border-radius: 14px; padding: 13px 16px; margin-bottom: 14px;
+    background: linear-gradient(135deg, rgba(248,113,113,0.10), rgba(251,191,36,0.06));
+    border: 1px solid rgba(251,191,36,0.28);
+  }
+  .diag-alert h4 { margin: 0 0 8px; font-size: 12px; letter-spacing: 1.4px; color: #fcd34d; }
+  .diag-alert .row { font-size: 12px; margin: 5px 0; line-height: 1.55; }
+  .diag-alert .row b { color: var(--text); font-weight: 600; }
+  .diag-alert .row span { color: var(--text-dim); }
+
+  .diag-flags { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }
+  .diag-flag {
+    font-size: 11px; padding: 4px 10px; border-radius: 8px; letter-spacing: .4px;
+    background: rgba(255,255,255,0.04); border: 1px solid var(--glass-border);
+    color: var(--text-dim); display: inline-flex; align-items: center; gap: 6px;
+  }
+  .diag-flag i { width: 5px; height: 5px; border-radius: 50%; background: #475569; flex: none; }
+  .diag-flag.on { color: #a7f3d0; border-color: rgba(52,211,153,0.28); background: rgba(52,211,153,0.07); }
+  .diag-flag.on i { background: #34d399; box-shadow: 0 0 6px #34d399; }
+  /* 上位フラグが off なので、上げても効かないもの。ここが読めないと無駄に悩む。 */
+  .diag-flag.dead { color: #fbbf24; border-color: rgba(251,191,36,0.30); background: rgba(251,191,36,0.06); }
+  .diag-flag.dead i { background: #fbbf24; box-shadow: 0 0 6px #fbbf24; }
+
+  .diag-layer { margin-bottom: 16px; }
+  .diag-layer > h3 {
+    font-size: 11px; letter-spacing: 2.2px; color: var(--text-dim);
+    margin: 0 0 8px; padding-bottom: 6px; border-bottom: 1px solid var(--glass-border);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .diag-layer > h3 em { font-style: normal; font-size: 10px; opacity: .7; letter-spacing: 1px; }
+  .diag-row {
+    display: grid; grid-template-columns: 10px 1fr auto; gap: 11px; align-items: start;
+    padding: 9px 12px; border-radius: 11px; margin-bottom: 5px;
+    background: rgba(255,255,255,0.025); border: 1px solid transparent;
+    cursor: default; transition: background .15s, border-color .15s;
+  }
+  .diag-row:hover { background: rgba(255,255,255,0.05); }
+  .diag-row.bad { border-color: rgba(248,113,113,0.28); background: rgba(248,113,113,0.05); }
+  .diag-row.warn { border-color: rgba(251,191,36,0.24); background: rgba(251,191,36,0.04); }
+  .diag-dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 5px; flex: none; background: #475569; }
+  .diag-dot.ok { background: #34d399; box-shadow: 0 0 7px rgba(52,211,153,.7); }
+  .diag-dot.disconnected { background: #fbbf24; box-shadow: 0 0 7px rgba(251,191,36,.7); }
+  .diag-dot.broken, .diag-dot.error { background: #f87171; box-shadow: 0 0 9px rgba(248,113,113,.8); animation: diagPulse 1.4s infinite; }
+  .diag-body { min-width: 0; }
+  .diag-title { font-size: 12.5px; color: var(--text); line-height: 1.4; }
+  .diag-key { font-size: 10px; color: var(--text-dim); opacity: .72; margin-top: 2px; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+  .diag-detail { font-size: 11px; color: var(--text-dim); margin-top: 3px; line-height: 1.5; word-break: break-word; }
+  .diag-impact { font-size: 10.5px; color: #fca5a5; margin-top: 4px; line-height: 1.5; }
+  .diag-ms { font-size: 10px; color: var(--text-dim); opacity: .6; font-variant-numeric: tabular-nums; white-space: nowrap; padding-top: 3px; }
+  .diag-actions { display: flex; align-items: start; gap: 5px; }
+  .diag-favorite {
+    width: 24px; height: 24px; padding: 0; border: 0; border-radius: 7px;
+    background: transparent; color: #64748b; cursor: pointer; font-size: 16px; line-height: 1;
+  }
+  .diag-favorite:hover { background: rgba(255,255,255,.08); color: #fcd34d; }
+  .diag-favorite.active { color: #fcd34d; text-shadow: 0 0 8px rgba(251,191,36,.45); }
+  .diag-empty { font-size: 12px; color: var(--text-dim); padding: 18px; text-align: center; }
+
+  /* ===== こころステータス (育成画面) ===== */
+  .mind-panel { width: clamp(680px, 72vw, 1120px); max-width: 94vw; }
+  .mind-head { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; }
+  .mind-head .mood-orb {
+    width: 46px; height: 46px; border-radius: 50%; flex: none;
+    display: grid; place-items: center; font-size: 22px;
+    background: radial-gradient(circle at 32% 30%, rgba(255,255,255,0.25), transparent 60%),
+                linear-gradient(135deg, var(--cyan), var(--violet));
+    box-shadow: 0 0 22px rgba(167,139,250,0.4);
+  }
+  .mind-head .who { flex: 1; }
+  .mind-head .who h2 { margin: 0; }
+  .mind-head .who .mood-label { font-size: 12px; color: var(--text-dim); margin-top: 3px; letter-spacing: 1px; }
+  .mind-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .mind-card {
+    background: rgba(255,255,255,0.035);
+    border: 1px solid var(--glass-border);
+    border-radius: 14px; padding: 14px 16px;
+    min-width: 0;
+  }
+  .mind-card.wide { grid-column: 1 / -1; }
+  .mind-card h4 {
+    font-size: 11px; letter-spacing: 2px; color: var(--text-dim);
+    margin-bottom: 10px; font-weight: 600;
+  }
+  .mind-card h4 b { color: var(--cyan); }
+
+  .trait-row { display: flex; align-items: center; gap: 10px; padding: 4px 0; }
+  .trait-row .t-name { width: 76px; flex: none; font-size: 12px; }
+  .trait-bar { flex: 1; height: 8px; border-radius: 999px; background: rgba(255,255,255,0.07); overflow: hidden; }
+  .trait-bar i {
+    display: block; height: 100%; border-radius: 999px;
+    background: linear-gradient(90deg, var(--cyan), var(--violet));
+    box-shadow: 0 0 10px rgba(34,211,238,0.35);
+    transition: width 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .trait-row .t-val { width: 34px; flex: none; text-align: right; font-size: 11px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+
+  .rel-level { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
+  .rel-level .lv {
+    font-size: 20px; font-weight: 700; letter-spacing: 1px;
+    background: linear-gradient(90deg, var(--pink), var(--violet));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .rel-level small { font-size: 11px; color: var(--text-dim); }
+  .rel-bar { height: 9px; border-radius: 999px; background: rgba(255,255,255,0.07); overflow: hidden; margin: 6px 0 8px; }
+  .rel-bar i {
+    display: block; height: 100%; border-radius: 999px;
+    background: linear-gradient(90deg, var(--pink), var(--violet));
+    box-shadow: 0 0 12px rgba(244,114,182,0.45);
+    transition: width 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .rel-meta { display: flex; gap: 14px; font-size: 11px; color: var(--text-dim); flex-wrap: wrap; }
+  .rel-meta b { color: var(--text); }
+
+  .like-chips { display: flex; flex-wrap: wrap; gap: 7px; }
+  .like-chip {
+    font-size: 11.5px; padding: 5px 12px; border-radius: 999px;
+    border: 1px solid var(--glass-border); background: rgba(255,255,255,0.04);
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .like-chip.pos { border-color: rgba(244,114,182,0.45); }
+  .like-chip.neg { border-color: rgba(96,165,250,0.4); color: var(--text-dim); }
+  .like-chip .hearts { font-size: 10px; letter-spacing: -1px; }
+
+  .mind-list { display: flex; flex-direction: column; gap: 7px; max-height: 150px; overflow-y: auto; padding-right: 4px; }
+  .mind-list::-webkit-scrollbar { width: 6px; }
+  .mind-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 3px; }
+  .mind-item { font-size: 12px; line-height: 1.55; display: flex; gap: 8px; align-items: baseline; }
+  .mind-item .when { font-size: 10px; color: var(--text-dim); flex: none; font-variant-numeric: tabular-nums; }
+  .mind-item .k {
+    font-size: 9.5px; flex: none; padding: 1px 7px; border-radius: 999px;
+    border: 1px solid var(--glass-border); color: var(--text-dim); letter-spacing: 1px;
+  }
+  .mind-item .k.episode { color: var(--violet); border-color: rgba(167,139,250,0.4); }
+  .mind-item .k.preference { color: var(--pink); border-color: rgba(244,114,182,0.4); }
+  .mem-stats { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .mem-stats .chip b { color: var(--cyan); }
+  .mind-summary {
+    font-size: 11.5px; color: var(--text-dim); line-height: 1.6;
+    padding: 8px 12px; border-radius: 10px;
+    background: rgba(0,0,0,0.22); border: 1px solid var(--glass-border);
+    margin-bottom: 10px;
+  }
+  .mind-empty { font-size: 11.5px; color: var(--text-dim); }
+  #mindBtn:hover { transform: none; color: var(--pink); }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="orb-wrap" id="orbWrap" title="クリックで感情カラーの説明を表示"><div class="orb-ring"></div><div id="orb" class="orb loading"></div></div>
+    <div class="title-block">
+      <h1>NEURO <span class="accent">VOICE</span> AI</h1>
+      <div id="stateLabel">起動中...</div>
+    </div>
+    <div class="header-right">
+      <div class="chips" id="chips"></div>
+      <div class="speaker-row">
+        <label>話者</label>
+        <select id="speakerSel" disabled><option>読込中...</option></select>
+        <button id="refreshBtn" class="mini" title="話者リストを更新">⟳</button>
+        <button id="sttBtn" class="mini-wide" title="音声認識のGPU/CPU切替 (ローカルLLM併用時はCPU推奨)">STT: --</button>
+        <button id="mindBtn" class="mini" title="こころステータス (性格・気分・記憶)">💠</button>
+        <button id="diagBtn" class="mini" title="管理者メニュー (配線診断)">🩺</button>
+        <button id="cognitionTestBtn" class="mini" title="この起動中だけ OFF → TEST → PROD SESSION を切替">認知: OFF</button>
+        <button id="settingsBtn" class="mini" title="設定">⚙</button>
+      </div>
+    </div>
+  </header>
+
+  <div id="ttsPop" class="tts-pop hidden">
+    <div class="tts-pop-title">読み上げ音声を切り替え</div>
+    <button class="tts-option" data-tts="voicevox"><span>VOICEVOX</span><small>軽量・高速</small></button>
+    <button class="tts-option" data-tts="style_bert_vits2"><span>Style-Bert-VITS2</span><small>感情表現</small></button>
+    <button class="tts-option" data-tts="qwen3"><span>Qwen3-TTS</span><small>ローカル</small></button>
+    <button class="tts-option" data-tts="null"><span>音声なし</span><small>OFF</small></button>
+    <div class="tts-volume-box">
+      <div class="tts-volume-head"><span>AIの声の音量</span><span id="ttsVolumeValue">100%</span></div>
+      <input id="ttsVolumeSlider" type="range" min="0" max="200" step="5" value="100">
+    </div>
+  </div>
+
+  <div id="chat"></div>
+
+  <div id="emoPop" class="emo-pop hidden">
+    <h3>感情オーブの色</h3>
+    <div class="row"><i style="background:#fbbf24"></i>喜 (joy)<small>嬉しい・ポジティブ</small></div>
+    <div class="row"><i style="background:#4ade80"></i>楽 (fun)<small>楽しい・ワクワク</small></div>
+    <div class="row"><i style="background:#f87171"></i>怒 (angry)<small>怒り・不満</small></div>
+    <div class="row"><i style="background:#60a5fa"></i>哀 (sad)<small>悲しい・しんみり</small></div>
+    <div class="row"><i style="background:#fb923c"></i>驚 (surprised)<small>びっくり</small></div>
+    <div class="sep"></div>
+    <div class="row"><i style="background:#22d3ee"></i>聞き取り中<small>通常時の状態色</small></div>
+    <div class="row"><i style="background:#a78bfa"></i>考え中</div>
+    <div class="row"><i style="background:#f472b6"></i>発話中 (感情なし)</div>
+    <div class="row"><i style="background:#475569"></i>待機 (マイクOFF)</div>
+  </div>
+
+  <footer>
+    <button id="micBtn" class="ctl on" title="マイク ON/OFF">🎤</button>
+    <button id="spkBtn" class="ctl" title="ニューロの声 (ローカルスピーカー) ON/OFF。Discordの声には影響しない">🔊</button>
+    <div id="meter"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+    <div class="input-wrap">
+      <input id="input" placeholder="テキストで話しかける..." autocomplete="off">
+      <button id="sendBtn" title="送信">➤</button>
+    </div>
+    <button id="visionBtn" class="ctl off" title="画面認識 ON/OFF (ゲーム実況など)">👁</button>
+    <button id="searchBtn" class="ctl off" title="Web検索 (DeepSearch) ON/OFF">🔍</button>
+    <button id="proactiveBtn" class="ctl off" title="自発モード ON/OFF (AIが自分から話す)">💭</button>
+    <button id="dcQuickBtn" class="ctl off" title="Discord VCに参加/退出 (未接続なら接続から自動で行う)">🎧</button>
+    <button id="stopBtn" class="ctl" title="応答を停止">⏹</button>
+    <button id="resetBtn" class="ctl" title="会話をリセット">↺</button>
+  </footer>
+</div>
+
+<div id="videoOverlay" class="overlay hidden">
+  <div class="vbig"><iframe id="videoFull" allow="autoplay; encrypted-media" allowfullscreen></iframe></div>
+  <div class="shot-note">ダブルクリックまたは背景クリックで閉じる</div>
+</div>
+
+<div id="shotOverlay" class="overlay hidden">
+  <img id="shotFull" alt="">
+  <div class="shot-note">ニューロが見た画面 — クリックで閉じる</div>
+</div>
+
+<div id="mindOverlay" class="overlay hidden">
+  <div class="panel mind-panel">
+    <div class="mind-head">
+      <div class="mood-orb" id="mindMoodOrb">🙂</div>
+      <div class="who">
+        <h2 id="mindName">こころステータス</h2>
+        <div class="mood-label" id="mindMoodLabel">--</div>
+      </div>
+      <button id="mindRefresh" class="mini" title="更新">⟳</button>
+    </div>
+    <div class="tabpage">
+      <div class="mind-grid" id="mindGrid"></div>
+    </div>
+    <div class="actions" style="margin-top: 14px;">
+      <button id="mindClose" class="btn ghost">閉じる</button>
+    </div>
+  </div>
+</div>
+
+
+<div id="diagOverlay" class="overlay hidden">
+  <div class="panel diag-panel">
+    <div class="diag-head">
+      <div class="diag-ring" id="diagRing"><b id="diagPct">--</b></div>
+      <div class="who">
+        <h2>🩺 配線診断</h2>
+        <div class="diag-sub">
+          <span id="diagStamp">未取得</span>
+          <span class="diag-live" id="diagLive"><i></i>自動更新</span>
+        </div>
+      </div>
+      <button id="diagRefresh" class="mini" title="いま点検する">⟳</button>
+    </div>
+    <div class="tabpage">
+      <div id="diagBody"><div class="diag-empty">点検中...</div></div>
+    </div>
+    <div class="actions" style="margin-top: 14px;">
+      <button id="diagClose" class="btn ghost">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<div id="overlay" class="overlay hidden">
+  <div class="panel">
+    <h2>⚙ 設定</h2>
+    <div class="tabs">
+      <button class="tab active" data-tab="llm">LLM</button>
+      <button class="tab" data-tab="features">機能</button>
+      <button class="tab" data-tab="persona">ペルソナ</button>
+      <button class="tab" data-tab="discord">Discord</button>
+      <button class="tab" data-tab="apikeys">APIキー</button>
+    </div>
+
+    <!-- ===== LLM タブ ===== -->
+    <div id="tab-llm" class="tabpage">
+      <div class="field">
+        <label>バックエンド</label>
+        <select id="setBackend"></select>
+      </div>
+      <div class="field">
+        <label>モデル</label>
+        <select id="setModelSelect"></select>
+        <input type="text" id="setModel" autocomplete="off" spellcheck="false"
+               placeholder="モデル名を入力 (例: qwen3-vl:8b)"
+               style="display:none; margin-top:8px;">
+      </div>
+      <div class="field">
+        <label>Temperature <b id="tempVal">0.7</b></label>
+        <input type="range" id="setTemp" min="0" max="1.5" step="0.05">
+      </div>
+      <div class="field two">
+        <div>
+          <label>最大応答トークン</label>
+          <input type="number" id="setMaxTokens" min="64" max="8192" step="64">
+        </div>
+        <div>
+          <label>履歴保持 (往復)</label>
+          <input type="number" id="setMaxTurns" min="1" max="100">
+        </div>
+      </div>
+      <div class="toggle-row">
+        <div class="t-label">起動時にLLMを自動ロード
+          <small>Ollama使用時、起動と同時にモデルをVRAMへ読み込む (初回応答が速くなる)</small>
+        </div>
+        <label class="sw"><input type="checkbox" id="setAutoLoad"><i></i></label>
+      </div>
+      <p class="hint">
+        Cerebras無料枠の節約: 最大応答トークンと履歴保持を減らすと消費トークンが減ります。
+        Ollamaは事前に起動しておくとモデル候補が自動表示されます。APIキーは .env で管理します。
+      </p>
+    </div>
+
+    <!-- ===== 機能 タブ ===== -->
+    <div id="tab-features" class="tabpage hidden">
+      <div class="field two">
+        <div>
+          <label>画面認識 (Vision)</label>
+          <select id="setVision">
+            <option value="off">無効</option>
+            <option value="on_demand">発話時に画面を見る</option>
+            <option value="auto">自動実況 (定期コメント)</option>
+          </select>
+        </div>
+        <div id="intervalField">
+          <label>実況間隔 (秒)</label>
+          <input type="number" id="setInterval" min="5" max="600">
+        </div>
+      </div>
+      <div class="field">
+        <label>画像認識に使うAI (どれか1つだけ有効)</label>
+        <div class="radio-group">
+          <label class="radio">
+            <input type="radio" name="visionProvider" value="ollama">
+            <div><span>Gemma 4 / Ollama</span><small>ローカルのマルチモーダルGemmaモデルを使用。画像対応は接続テストで確認します。</small></div>
+          </label>
+          <label class="radio">
+            <input type="radio" name="visionProvider" value="claude">
+            <div><span>Claude Vision</span><small>高精度な画面理解 (要 ANTHROPIC_API_KEY)</small></div>
+          </label>
+          <label class="radio">
+            <input type="radio" name="visionProvider" value="google">
+            <div><span>Google Cloud Vision</span><small>文字読み取り・物体検出 (要 GOOGLE_VISION_API_KEY)</small></div>
+          </label>
+          <label class="radio">
+            <input type="radio" name="visionProvider" value="local">
+            <div><span>互換ローカルLLM</span><small>画像対応モデル限定。Gemma 4を使う場合は上のOllamaを選択。</small></div>
+          </label>
+        </div>
+      </div>
+      <div class="field two">
+        <div><label>Gemma Visionモデル名</label><input id="setVisionModel" placeholder="gemma4-12b-qat"></div>
+        <div><label>入力</label><select id="setVideoInput"><option value="obs">OBSゲームキャプチャ（推奨）</option><option value="screen">画面全体</option><option value="camera">Webカメラ</option><option value="window">旧方式：ゲームウィンドウ直接取得</option></select><button type="button" id="visionTestBtn" class="mini-wide" style="margin-top:8px">Gemma接続テスト</button> <button type="button" id="cameraPreviewBtn" class="mini-wide" style="margin-top:8px">入力プレビュー</button></div>
+      </div>
+      <img id="cameraPreview" class="hidden" alt="カメラプレビュー" style="max-width:100%;max-height:200px;border-radius:10px;margin:-4px 0 12px">
+      <div class="toggle-row">
+        <div class="t-label">ゲーム画面・映像認識
+          <small>OBSの「ゲームキャプチャ」から1秒1フレームで継続取得し、現在状態と直近の流れを更新します。録画・配信は不要で、映像は保存しません。</small>
+        </div>
+        <label class="sw"><input type="checkbox" id="setVideoEnabled"><i></i></label>
+      </div>
+      <div id="obsVideoSettings">
+        <div class="field two">
+          <div><label>OBS WebSocket ホスト</label><input id="setObsHost" placeholder="127.0.0.1"></div>
+          <div><label>ポート</label><input id="setObsPort" type="number" min="1" max="65535" placeholder="4455"></div>
+        </div>
+        <div class="field two">
+          <div><label>WebSocketパスワード</label><input id="setObsPassword" type="password" placeholder="設定済みなら空欄で維持"></div>
+          <div><label>OBS映像ソース</label><select id="setObsSource"><option value="">先にソース一覧を取得してください</option></select></div>
+        </div>
+        <div style="margin:-4px 0 14px">
+          <button type="button" id="refreshObsSources" class="mini-wide">OBS接続・ソース一覧を取得</button>
+          <button type="button" id="testObsCapture" class="mini-wide">選択ソースのフレームをテスト</button>
+          <small id="obsStatus" style="display:block;margin-top:7px;color:var(--muted)">OBSの「ツール → WebSocketサーバー設定」でサーバーを有効にし、シーンへゲームキャプチャを追加してください。</small>
+        </div>
+      </div>
+      <div id="legacyVideoSettings">
+      <div class="field two">
+        <div><label>ゲームウィンドウ</label><select id="setVideoWindow"><option value="">ウィンドウを選択してください</option></select><button type="button" id="refreshVideoWindows" class="mini-wide" style="margin-top:8px">ウィンドウ一覧を更新</button> <button type="button" id="captureForegroundWindow" class="mini-wide" style="margin-top:8px">Minecraftを前面にして3秒後に取得</button></div>
+        <div><label>カメラ番号（カメラ入力時のみ）</label><input id="setVideoSource" placeholder="0"></div>
+      </div>
+      </div>
+      <div class="field two">
+        <div><label>ゲームプロファイル</label><select id="setGameProfile"><option value="">通常の映像・会話</option></select><small>game_profiles フォルダ内のプロファイルを表示します。</small></div>
+        <div class="toggle-row compact"><div class="t-label">ゲーム相棒：状況変化にツッコむ<small>危険・発見・失敗・回復・行動変化にだけ、会話を邪魔しない短い一言を返します。メニューやロード中は黙ります。</small></div><label class="sw"><input type="checkbox" id="setGameCommentary"><i></i></label></div>
+      </div>
+      <div class="toggle-row">
+        <div class="t-label">ゲーム固有の知識を使う
+          <small>選択したゲームプロファイルのローカル知識を、質問やプレイ支援に利用します。</small>
+        </div>
+        <label class="sw"><input type="checkbox" id="setGameKnowledge"><i></i></label>
+      </div>
+      <div class="field two">
+        <div><label>意味解析の最短開始間隔 (秒)</label><input type="number" id="setVideoInterval" min="0.5" max="60" step="0.5"><small>OBS取得は常時1fpsです。Gemma解析は一度に1件だけ実行し、完了後は最新フレームへ追いつきます。</small></div>
+        <div><label>1回の最大フレーム数</label><input type="number" id="setVideoFrames" min="1" max="6"><small>1なら解析開始時点の最新画面を1枚だけ送ります。</small></div>
+      </div>
+      <div class="field" id="visionDebugBox" style="padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:rgba(0,0,0,.12)">
+        <label>映像認識デバッグ</label>
+        <small id="visionDebugCounts">取得 0 / 解析 0 / 破棄 0</small>
+        <small id="visionDebugAges" style="display:block;margin-top:4px">フレーム - / 認識 -</small>
+        <small id="visionDebugLatency" style="display:block;margin-top:4px">Vision待機中</small>
+        <small id="visionDebugScene" style="display:block;margin-top:4px;white-space:normal">現在状態: -</small>
+      </div>
+      <div class="field two">
+        <div><label>音声認識</label><select id="setAudioInput"><option value="whisper">Whisper</option><option value="gemma4_audio">Gemma 4 Audio（未対応時はWhisperへ戻る）</option></select></div>
+        <div><label>読み上げ音声</label><select id="setAudioOutput"><option value="voicevox">VOICEVOX</option><option value="style_bert_vits2">Style-Bert-VITS2 (感情表現)</option><option value="qwen3">Qwen3 TTS</option><option value="null">音声なし</option></select></div>
+      </div>
+      <div class="toggle-row">
+        <div class="t-label">Web検索 (DeepSearch)
+          <small>「調べて」「最新」「ニュース」等の発話でDuckDuckGo検索し、結果を参考に回答する</small>
+        </div>
+        <label class="sw"><input type="checkbox" id="setSearch"><i></i></label>
+      </div>
+      <div class="field two" style="margin-top:8px">
+        <div class="toggle-row"><div class="t-label">自律研究<small>明示依頼に加え、公開設定されたペルソナの興味や、直接会話で答えられなかった低リスクの疑問を、会話後の低優先度キューで調べます。履歴は「こころ」で確認できます。</small></div><label class="sw"><input type="checkbox" id="setAutonomousResearch"><i></i></label></div>
+        <div><label>自律研究モード</label><select id="setAutonomousResearchMode"><option value="OFF">OFF</option><option value="ASK_FIRST">毎回確認</option><option value="LOW_RISK_AUTO">低リスクのみ自動</option><option value="FULL_AUTO_WITH_LIMITS">制限付き自動</option></select><small>医療・法律・金融・政治・個人情報は自動検索しません。</small></div>
+      </div>
+      <div class="toggle-row">
+        <div class="t-label">曲名認識 (実音源)
+          <small>「この曲何？」で、内蔵YouTubeは再生情報から即答。外部YouTubeはWindows既定出力の再生音を8秒取得してAudDへ送る。本人マイクは送信しません。APIキーはAPIキータブで設定。</small>
+        </div>
+        <label class="sw"><input type="checkbox" id="setMusicRecognition"><i></i></label>
+      </div>
+      <div class="field" style="margin-top:8px;">
+        <label>外部YouTubeの再生音取得先</label>
+        <select id="setMusicRecognitionDevice"><option value="">Windows既定の出力</option></select>
+        <small>外部ブラウザのYouTubeが実際に鳴っている、ループバック取得可能な出力を選びます。</small>
+      </div>
+      <div class="toggle-row">
+        <div class="t-label">鼻歌・口笛で曲名認識
+          <small>「鼻歌で曲を探して」と言った後、3〜15秒ほど鼻歌か口笛を聞かせる。ACRCloudのHumming対応プロジェクトとAPIキーが必要。</small>
+        </div>
+        <label class="sw"><input type="checkbox" id="setHummingRecognition"><i></i></label>
+      </div>
+      <div class="field" style="margin-top:8px;">
+        <label>ACRCloud Host (鼻歌認識)</label>
+        <input type="text" id="setHummingHost" placeholder="identify-eu-west-1.acrcloud.com">
+      </div>
+      <div class="toggle-row">
+        <div class="t-label">疑似感情
+          <small>応答の感情 (喜怒哀楽) に合わせて左上のオーブの色が変わる</small>
+        </div>
+        <label class="sw"><input type="checkbox" id="setEmotion"><i></i></label>
+      </div>
+      <div class="field" style="margin-top:14px;border-top:1px solid var(--border);padding-top:14px">
+        <label>会話エンジン</label>
+        <div class="field two" style="margin:8px 0 0">
+          <div><label>比較バリアント</label><select id="setConversationVariant"><option value="baseline">baseline</option><option value="enhanced">enhanced</option><option value="experimental">experimental</option></select></div>
+          <div><label>表現強度</label><select id="setConversationFeatureMode"><option value="conservative">控えめ</option><option value="normal">通常</option><option value="expressive">表現豊か</option><option value="debug_showcase">デバッグ強調</option></select></div>
+        </div>
+        <small>追加LLM呼び出しは行わず、Conversation Plannerが状況に合う任意要素を0〜3件だけ選びます。</small>
+      </div>
+      <div class="toggle-row"><div class="t-label">会話エンジン開発者表示<small>こころ画面に発動理由、候補評価、Critic、学習、A/B比較、品質指標を表示します。</small></div><label class="sw"><input type="checkbox" id="setConversationDeveloper"><i></i></label></div>
+      <div class="field two" id="conversationFeatureToggles">
+        <label class="radio"><input type="checkbox" data-conv-feature="humor_engine"><div><span>ユーモア</span></div></label>
+        <label class="radio"><input type="checkbox" data-conv-feature="casual_conversation_engine"><div><span>雑談展開</span></div></label>
+        <label class="radio"><input type="checkbox" data-conv-feature="imagination_engine"><div><span>想像・仮説</span></div></label>
+        <label class="radio"><input type="checkbox" data-conv-feature="story_engine"><div><span>短いストーリー</span></div></label>
+        <label class="radio"><input type="checkbox" data-conv-feature="playful_fantasy_engine"><div><span>妄想・遊び</span></div></label>
+        <label class="radio"><input type="checkbox" data-conv-feature="world_knowledge_engine"><div><span>世界知識</span></div></label>
+        <label class="radio"><input type="checkbox" data-conv-feature="self_growth"><div><span>自己成長</span></div></label>
+        <label class="radio"><input type="checkbox" data-conv-feature="relationship_evolution"><div><span>関係性進化</span></div></label>
+        <label class="radio"><input type="checkbox" data-conv-feature="value_system"><div><span>AI価値観</span></div></label>
+        <label class="radio"><input type="checkbox" data-conv-feature="experience_memory"><div><span>AI経験記憶</span></div></label>
+      </div>
+      <div class="field"><label>デバッグ時の強制機能</label><select id="setConversationForce"><option value="">強制しない</option><option value="humor_engine">ユーモア</option><option value="casual_conversation_engine">雑談</option><option value="imagination_engine">想像</option><option value="story_engine">ストーリー</option><option value="playful_fantasy_engine">妄想・遊び</option><option value="world_knowledge_engine">世界知識</option><option value="value_system">価値観</option></select><small>テスト専用です。安全・深刻度の抑制条件は維持されます。</small></div>
+      <div class="field" style="margin-top:12px;">
+        <label>音声認識 beam size</label>
+        <select id="setSttBeam">
+          <option value="1">1 — 最速</option>
+          <option value="3">3 — 軽い精度優先</option>
+          <option value="5">5 — 推奨バランス</option>
+          <option value="8">8 — 精度優先</option>
+          <option value="10">10 — 高精度・遅め</option>
+        </select>
+        <small>Whisperが同時に比較する認識候補数です。大きいほど同音語・固有名詞に強くなりますが、認識は遅くなります。適用時にSTTを再読込します。</small>
+      </div>
+      <div class="field" style="margin-top:8px;">
+        <button type="button" id="sttCorrectionsLink" class="settings-link">誤認識の修正辞書を開く →</button>
+        <small>「誤認識された表記 → 正しい表記」を登録します。保存後はSTTを自動で再読込します。</small>
+      </div>
+      <div class="field" style="margin-top:8px;">
+        <button type="button" id="ttsPronunciationsLink" class="settings-link">読み方辞書を開く →</button>
+        <small>「表記 → かなの読み」を登録します。表示する文章は変えず、VOICEVOXの発音だけを直します。</small>
+      </div>
+      <div class="emo-legend">
+        <span><i style="background:#fbbf24"></i>喜 joy</span>
+        <span><i style="background:#4ade80"></i>楽 fun</span>
+        <span><i style="background:#f87171"></i>怒 angry</span>
+        <span><i style="background:#60a5fa"></i>哀 sad</span>
+        <span><i style="background:#fb923c"></i>驚 surprised</span>
+        <span><i style="background:#f472b6"></i>通常の発話</span>
+      </div>
+      <div class="toggle-row">
+        <div class="t-label">自発モード
+          <small>ローカル・Discord共通。Discordでは会話に関係する補足だけを短く話し、複数人の沈黙は埋めません</small>
+        </div>
+        <label class="sw"><input type="checkbox" id="setProactive"><i></i></label>
+      </div>
+      <div class="field two" id="proactiveIntervals" style="margin-top: 12px;">
+        <div>
+          <label>自発発話の最短間隔 (秒)</label>
+          <input type="number" id="setProMin" min="5" max="3600">
+        </div>
+        <div>
+          <label>最長間隔 (秒)</label>
+          <input type="number" id="setProMax" min="5" max="3600">
+        </div>
+      </div>
+      <p class="hint">
+        画面認識は1回あたりのトークン消費が大きめ。自動実況の間隔はCerebras無料枠なら20秒以上推奨。
+        ローカルLLMが画像非対応の場合はVisionプロバイダを Claude か Google にしてください。
+      </p>
+    </div>
+
+    <!-- ===== ペルソナ タブ ===== -->
+    <div id="tab-persona" class="tabpage hidden">
+      <div class="field">
+        <label>ペルソナを選択</label>
+        <select id="personaSel"></select>
+      </div>
+      <details class="preview">
+        <summary>新しいペルソナを追加</summary>
+        <div class="field">
+          <label>ID（半角英小文字・数字・_）</label>
+          <input id="personaNewKey" placeholder="momiji" spellcheck="false">
+        </div>
+        <div class="field">
+          <label>表示名</label>
+          <input id="personaNewName" placeholder="もみじ">
+        </div>
+        <button id="personaAdd" class="btn">追加する</button>
+        <p class="hint">
+          中身は空で作られます。追加しても切り替わりません——
+          上の一覧から選んで内容を書き、「適用」で切り替えてください。
+          記憶・関係値・成長はペルソナごとに別々に育ちます。
+        </p>
+      </details>
+      <details class="preview">
+        <summary>選択中のペルソナを削除</summary>
+        <button id="personaDelete" class="btn">一覧から削除する</button>
+        <p class="hint">
+          一覧から外すだけで、<b>記憶・関係値のファイルは消しません</b>。
+          消すと戻せないためです。同じIDで作り直せば、そのペルソナの記憶は元に戻ります。
+          本当に消したい時は、削除後に表示されるファイルを data フォルダから手で削除してください。
+          使用中のペルソナと、最後の1つは削除できません。
+        </p>
+      </details>
+      <div class="field">
+        <label>ベース System Prompt</label>
+        <textarea id="setSysPrompt" spellcheck="false"></textarea>
+      </div>
+      <div id="personaFields"></div>
+      <details class="preview">
+        <summary>実際にLLMへ送られる System Prompt を確認</summary>
+        <pre id="personaPreview"></pre>
+      </details>
+      <p class="hint">
+        「適用」で選択中のペルソナに切り替わり、編集内容も保存されます。
+        各項目は空欄にすると System Prompt に含まれません。
+        別のペルソナを選ぶと未適用の編集は破棄されます。
+      </p>
+
+      <!-- 人格データのバックアップ -->
+      <div class="field" style="margin-top:18px;">
+        <label>人格データのバックアップ</label>
+        <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+          <button type="button" id="backupNowBtn" class="btn primary" style="padding:8px 18px;">今すぐバックアップ</button>
+          <span class="hint" id="backupMsg" style="margin:0;"></span>
+        </div>
+        <div id="backupList" style="margin-top:10px; max-height:180px; overflow-y:auto;
+             border:1px solid rgba(255,255,255,.08); border-radius:10px; padding:6px 10px;
+             font-size:12px; line-height:1.9;"></div>
+        <p class="hint" style="margin:8px 0 0;">
+          全ペルソナの人格・記憶・関係性・話者データを自動で定期保存しています (既定: 1時間毎+終了時)。
+          復元するとファイルが書き戻され、<b>反映にはアプリの再起動が必要</b>です。
+          復元前には現在の状態が自動で退避されます。
+        </p>
+      </div>
+    </div>
+
+    <!-- ===== Discord タブ ===== -->
+    <div id="tab-discord" class="tabpage hidden">
+      <div class="field">
+        <label>接続</label>
+        <div style="display:flex; gap:10px; align-items:center;">
+          <span class="chip" id="dcState">未接続</span>
+          <button type="button" id="dcConnBtn" class="btn primary" style="padding:8px 20px;">接続</button>
+        </div>
+      </div>
+      <div class="field">
+        <label>サーバーへの参加</label>
+        <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+          <button type="button" id="dcInviteBtn" class="btn discord" style="padding:9px 20px;"
+            title="ブラウザでDiscordの招待ページを開き、ニューロをサーバーへ(再)招待します">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.317 4.369A19.79 19.79 0 0 0 15.885 3c-.2.36-.43.842-.59 1.226a18.27 18.27 0 0 0-5.59 0A12.5 12.5 0 0 0 9.11 3a19.7 19.7 0 0 0-4.435 1.37C1.86 8.59 1.094 12.7 1.476 16.75a19.9 19.9 0 0 0 6.06 3.08c.49-.67.926-1.38 1.302-2.13-.716-.27-1.4-.605-2.045-.994.171-.126.34-.257.5-.39a14.2 14.2 0 0 0 12.09 0c.164.14.332.27.5.39-.647.39-1.332.724-2.048.994.376.75.812 1.46 1.302 2.13a19.85 19.85 0 0 0 6.063-3.08c.448-4.69-.766-8.76-3.183-12.38ZM8.68 14.26c-1.183 0-2.157-1.085-2.157-2.42 0-1.334.955-2.42 2.157-2.42 1.21 0 2.176 1.096 2.157 2.42 0 1.335-.955 2.42-2.157 2.42Zm6.64 0c-1.183 0-2.157-1.085-2.157-2.42 0-1.334.955-2.42 2.157-2.42 1.21 0 2.176 1.096 2.157 2.42 0 1.335-.946 2.42-2.157 2.42Z"/></svg>
+            サーバーへ再招待
+          </button>
+        </div>
+        <p class="hint" style="margin:8px 0 0;">
+          サーバーからキックした場合はここから招待し直してください
+          (ブラウザで「サーバーに追加」を選ぶだけ)。追加後に上の「接続」→VC参加でOKです。
+        </p>
+      </div>
+      <div class="field">
+        <label>通話の聞き取り方法 <b>受信</b></label>
+        <label>Discord音声の受信方法</label>
+        <select id="dcReceiveMode" style="width:100%; margin-bottom:8px;">
+          <option value="direct_dave">DAVE直接受信（推奨・話者別PCM）</option>
+          <option value="auto">DAVE優先（失敗時ループバック）</option>
+          <option value="loopback">Windowsループバック（従来方式）</option>
+        </select>
+        <div id="dcReceiveStatus" class="hint" style="margin:0 0 8px;"></div>
+        <select id="dcInputMode" style="width:100%;">
+          <option value="mic">本人マイクのみ</option>
+          <option value="loopback">通話をループバックで聞く (相手の声)</option>
+          <option value="mix">本人マイク + 通話ループバック</option>
+        </select>
+        <div id="dcLoopbackRow" style="display:none; margin-top:10px;">
+          <label>Discord音声取得デバイス</label>
+          <div style="display:flex; gap:8px; align-items:center;">
+            <select id="dcLoopbackDev" style="flex:1; min-width:0;">
+              <option value="">既定の出力 (Discordの再生先)</option>
+            </select>
+            <button type="button" id="dcLoopbackRefresh" class="mini" title="出力デバイス一覧を更新">⟳</button>
+          </div>
+          <div id="dcLoopbackStatus" class="hint" style="margin-top:7px;"></div>
+          <div id="dcLoopbackAvailable" class="hint" style="margin-top:4px;"></div>
+          <label style="margin-top:10px; display:block;">本人マイク</label>
+          <select id="dcMicDev" style="width:100%;"></select>
+          <label style="margin-top:10px; display:block;">モニター再生先</label>
+          <select id="dcMonitorDev" style="width:100%;"></select>
+          <label style="margin-top:10px; display:block;">AI音声再生先</label>
+          <select id="dcAiOutputDev" style="width:100%;"></select>
+          <p class="hint" style="margin:8px 0 0;">推奨: Discord出力と「Discord音声取得デバイス」は Elgato Sound Capture、モニター/AI音声は Razer。Discordアプリ側でも出力先を同じ仮想デバイスにしてください。</p>
+          <label class="ck" style="display:flex; align-items:center; gap:8px; margin-top:10px; font-size:12px; color:var(--text-dim);">
+            <input type="checkbox" id="dcLoopbackMute">
+            AI音声もDiscord音声取得デバイスへ流す場合のみ、AI発話中の取得を止める
+          </label>
+        </div>
+        <div style="margin-top:12px; padding:11px 13px; border:1px solid var(--line); border-radius:10px; background:rgba(148,163,184,.06);">
+          <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+            <button type="button" id="audioRedetect" class="btn" style="padding:7px 16px;">🎤 マイクを再認識</button>
+            <span id="audioRedetectStatus" class="hint" style="margin:0; flex:1; min-width:180px;"></span>
+          </div>
+          <p class="hint" style="margin:8px 0 0;">
+            起動後にヘッドセットを繋いだ時や、認識が止まった時に押してください。デバイス一覧を作り直し、マイクとスピーカーを開き直します。
+            設定したマイクが見つからない場合は既定デバイスで開き、その旨を表示します。<b>再起動は不要</b>です。
+          </p>
+        </div>
+        <button type="button" id="dcInputSave" class="btn primary" style="margin-top:10px; padding:8px 20px;">保存</button>
+        <p class="hint" style="margin:8px 0 0;">
+          DiscordはE2EE(DAVE)化でBotが相手の声を直接受信できません。代わりにPCが
+          Discordから鳴らしている音声を取り込んでニューロに聞かせます。配信では
+          「本人マイク + 通話ループバック」が基本。<b>反映にはニューロの再起動が必要</b>です。
+        </p>
+      </div>
+      <div class="field">
+        <label>ボイスチャンネル</label>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <select id="dcVcSel" style="flex:1; min-width:0;">
+            <option value="">自動 (人がいるVCへ参加)</option>
+          </select>
+          <button type="button" id="dcVcRefresh" class="mini" title="VC一覧を更新">⟳</button>
+          <button type="button" id="dcJoinBtn" class="btn primary" style="padding:8px 16px; white-space:nowrap;">VC参加</button>
+          <button type="button" id="dcLeaveBtn" class="btn ghost" style="padding:8px 16px; white-space:nowrap;">退出</button>
+        </div>
+        <p class="hint" id="dcMemberStatus" style="margin:6px 0 0;">参加者: 取得中</p>
+      </div>
+      <div class="field">
+        <label>Botトークン <b>DISCORD_BOT_TOKEN</b></label>
+        <div class="key-row">
+          <input type="password" id="dcToken" placeholder="未設定" autocomplete="off" spellcheck="false">
+          <button type="button" class="key-eye" id="dcEye">👁</button>
+        </div>
+      </div>
+      <div class="toggle-row">
+        <div class="t-label">全発話に応答
+          <small>OFFにすると、呼びかけワードを言われた時と応答直後だけ反応 (大人数の通話向け)</small>
+        </div>
+        <label class="sw"><input type="checkbox" id="dcRespondAll"><i></i></label>
+      </div>
+      <div class="field" style="margin-top:12px;">
+        <label>呼びかけワード (カンマ区切り)</label>
+        <input type="text" id="dcWake" placeholder="ニューロ, neuro">
+        <p class="hint" style="margin:6px 0 0;">カタカナ/ひらがなの揺れ(ニューロ/にゅーろ等)は自動で吸収します。聞き取られやすい呼び名を足すと反応率が上がります。</p>
+      </div>
+      <div class="field">
+        <label>返事のあと継続して聞く秒数</label>
+        <input type="number" id="dcFollowUp" min="0" max="180" step="5" style="width:120px;">
+        <p class="hint" style="margin:6px 0 0;">ニューロが返事してからこの秒数は、名前を呼ばなくても会話の続きとして反応します(既定30)。</p>
+      </div>
+      <div class="toggle-row">
+        <div class="t-label">登録済みの声だけに反応
+          <small>動画・BGMなど知らない声を無視する (聞き取りには表示もしない)。
+          新しい人は「ニューロ」と呼びかければ声紋登録されて会話できる</small>
+        </div>
+        <label class="sw"><input type="checkbox" id="dcKnownOnly"><i></i></label>
+      </div>
+      <div class="toggle-row">
+        <div class="t-label">新しい参加者へ挨拶
+          <small>Botと同じVCへ新しく入った人に、一度だけ短く挨拶します。</small>
+        </div>
+        <label class="sw"><input type="checkbox" id="dcGreetOnJoin"><i></i></label>
+      </div>
+      <div class="toggle-row">
+        <div class="t-label">Discord画面共有をOBSで見る
+          <small>「画面共有見て」で継続認識を開始し、「見るのやめて」で停止します。</small>
+        </div>
+        <label class="sw"><input type="checkbox" id="dcScreenShareEnabled"><i></i></label>
+      </div>
+      <div class="field">
+        <label>画面共有を取り込むOBSソース名</label>
+        <input type="text" id="dcScreenShareSource" placeholder="Discord画面共有">
+        <p class="hint" style="margin:6px 0 0;">
+          OBSでDiscordの画面共有ポップアウトを「ウィンドウキャプチャ」し、そのソース名を指定します。
+          OBS WebSocketの接続設定は「機能 → ゲーム画面・映像認識」と共通です。
+          共有映像そのものは保存せず、直近の解析状態だけを会話へ渡します。
+        </p>
+      </div>
+      <div class="toggle-row">
+        <div class="t-label">応答をテキストチャンネルにも書く</div>
+        <label class="sw"><input type="checkbox" id="dcEcho"><i></i></label>
+      </div>
+      <p class="hint">
+        使い方: ①discord.com/developers/applications でBotを作成し「MESSAGE CONTENT INTENT」をON
+        ②トークンを上に貼って「接続」 ③OAuth2 URL Generator (bot / View Channels, Send Messages,
+        Connect, Speak) でサーバーへ招待 ④VCに入ってからテキストチャンネルで !join。
+        通話中はローカルマイクが自動でOFFになります。
+        必要パッケージ: pip install "discord.py[voice]==2.6.4" discord-ext-voice-recv
+        (2.7以降=受信ノイズ化 / 2.5以前=即切断のため、2.6.4固定)
+      </p>
+    </div>
+
+    <!-- ===== APIキー タブ ===== -->
+    <div id="tab-apikeys" class="tabpage hidden">
+      <div id="apiKeyFields"></div>
+      <p class="hint">
+        キーはプロジェクト直下の .env に保存されます (config.yaml には書かれません)。
+        空欄のまま適用しても既存のキーは消えません。
+        Vision (Claude/Google) のキーは即時反映、LLMのキーは設定の「適用」で切り替えた時から使われます。
+      </p>
+    </div>
+
+    <div class="actions">
+      <button id="setCancel" class="btn ghost">キャンセル</button>
+      <button id="setApply" class="btn primary">適用</button>
+    </div>
+  </div>
+</div>
+
+<div id="sttCorrectionsOverlay" class="overlay hidden">
+  <div class="panel correction-panel">
+    <h2>🎙 誤認識の修正辞書</h2>
+    <p class="hint">Whisperの認識結果を、会話へ渡す前に置き換えます。一般語を広く置換すると誤補正になるため、確認できた誤変換だけを登録してください。</p>
+    <div class="correction-row" style="margin: 12px 0 7px; color: var(--text-dim); font-size: 11px;">
+      <span>誤認識された表記</span><span></span><span>正しい表記</span><span></span>
+    </div>
+    <div id="sttCorrectionsList" class="correction-list"></div>
+    <div style="margin-top:12px;"><button type="button" id="sttCorrectionAdd" class="btn ghost">＋ 行を追加</button></div>
+    <div class="actions" style="margin-top: 16px;">
+      <button id="sttCorrectionsBack" class="btn ghost">設定へ戻る</button>
+      <button id="sttCorrectionsSave" class="btn primary">保存してSTTを再読込</button>
+    </div>
+  </div>
+</div>
+
+<div id="ttsPronunciationsOverlay" class="overlay hidden">
+  <div class="panel correction-panel">
+    <h2>🔊 読み方辞書</h2>
+    <p class="hint">表記はそのまま表示し、VOICEVOXへ渡す時だけ読みをかなへ置き換えます。例: 「そんな風」→「そんなふう」</p>
+    <div class="correction-row" style="margin: 12px 0 7px; color: var(--text-dim); font-size: 11px;">
+      <span>表記</span><span></span><span>読み（かな）</span><span></span>
+    </div>
+    <div id="ttsPronunciationsList" class="correction-list"></div>
+    <div style="margin-top:12px;"><button type="button" id="ttsPronunciationAdd" class="btn ghost">＋ 行を追加</button></div>
+    <div class="actions" style="margin-top: 16px;">
+      <button id="ttsPronunciationsBack" class="btn ghost">設定へ戻る</button>
+      <button id="ttsPronunciationsSave" class="btn primary">保存</button>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const chat = $("chat"), orb = $("orb"), stateLabel = $("stateLabel");
+const STATE_TEXT = {
+  loading: "起動中...",
+  idle: "マイクOFF — テキスト入力は可能",
+  listening: "聞き取り中 — 話しかけてください",
+  thinking: "考え中...",
+  speaking: "発話中 (話しかけると中断できます)",
+};
+let currentAI = null;      // ストリーミング中のAIバブル
+let partialUser = null;    // 暫定認識バブル
+let partialDiscordUser = null;
+let lastUser = null;       // 直近のユーザーバブル (トーン表示用)
+let personaName = "AI";
+let apiReady = false;
+let currentEmotion = null; // 疑似感情 (joy/fun/angry/sad/surprised/neutral)
+let currentInfo = {};
+let ttsSwitching = false;
+const EMO_ICON = { joy: "😊", fun: "😆", angry: "😠", sad: "😢", surprised: "😲", neutral: "" };
+
+function esc(s) {
+  return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+function escAttr(s) {
+  return esc(String(s)).replace(/"/g, "&quot;");
+}
+function scroll() { chat.scrollTop = chat.scrollHeight; }
+
+function addSys(text, isError) {
+  const el = document.createElement("div");
+  el.className = "sys" + (isError ? " error" : "");
+  el.textContent = text;
+  chat.appendChild(el); scroll();
+  return el;
+}
+function addUser(text, partial) {
+  const el = document.createElement("div");
+  el.className = "msg user" + (partial ? " partial" : "");
+  el.textContent = text;
+  chat.appendChild(el); scroll();
+  return el;
+}
+function addShot(b64, source, sourceName) {
+  // 直前のサムネイルが連続している場合は差し替える (自動実況で溜まりすぎ防止)
+  const last = chat.lastElementChild;
+  const src = "data:image/jpeg;base64," + b64;
+  const sourceKey = source || "default";
+  const label = sourceKey === "minecraft_obs"
+    ? "👁 OBSマイクラ"
+    : (sourceKey === "discord_screen_share" ? "👁 Discord画面共有" : "👁 いま見た画面");
+  if (last && last.classList.contains("shot") && last.dataset.source === sourceKey) {
+    last.querySelector("img").src = src;
+    last.querySelector(".cap span").textContent = label + (sourceName ? " — " + sourceName : "");
+    last.querySelector(".cap small").textContent = timeNow();
+    scroll();
+    return;
+  }
+  const el = document.createElement("div");
+  el.className = "shot" + (sourceKey === "default" ? "" : " obs-visual");
+  el.dataset.source = sourceKey;
+  el.title = "クリックで拡大";
+  el.innerHTML = '<img alt="AIが見た画面"><div class="cap"><span>' +
+    esc(label + (sourceName ? " — " + sourceName : "")) + '</span><small>' +
+    timeNow() + "</small></div>";
+  el.querySelector("img").src = src;
+  el.addEventListener("click", () => {
+    $("shotFull").src = el.querySelector("img").src;
+    $("shotOverlay").classList.remove("hidden");
+  });
+  chat.appendChild(el); scroll();
+}
+function timeNow() {
+  const d = new Date();
+  return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+}
+
+function addAI() {
+  const el = document.createElement("div");
+  el.className = "msg ai streaming";
+  el.innerHTML = '<div class="name">' + esc(personaName.toUpperCase()) + '</div><div class="body"></div>';
+  chat.appendChild(el); scroll();
+  return el;
+}
+
+function handleEvent(ev) {
+  const d = ev.data || {};
+  switch (ev.type) {
+    case "status":
+      addSys(d.message); break;
+    case "ready": {
+      addSys("準備完了。話しかけてください 🎧");
+      personaName = (d.info || {}).persona || "AI";
+      setChips(d.info || {});
+      setSttUI((d.info || {}).stt_device || "cuda");
+      loadSpeakers(false);
+      loadTtsVolume();
+      break;
+    }
+    case "info_update":
+      setChips(d.info || {});
+      // ペルソナ切替後のチャット表示名も新しいペルソナ名にする
+      if (d.info && d.info.persona) personaName = d.info.persona;
+      if (d.info && d.info.stt_device) setSttUI(d.info.stt_device);
+      break;
+    case "tts_switching":
+      ttsSwitching = true;
+      updateTtsPopover(d.backend);
+      setChips(currentInfo);
+      break;
+    case "tts_changed":
+      ttsSwitching = false;
+      currentInfo.tts = d.backend;
+      setChips(currentInfo);
+      updateTtsPopover(d.backend);
+      loadSpeakers(false);
+      break;
+    case "tts_switch_failed":
+      ttsSwitching = false;
+      currentInfo.tts = d.backend;
+      setChips(currentInfo);
+      updateTtsPopover(d.backend);
+      break;
+    case "tts_volume_changed":
+      setTtsVolumeUI(d.percent);
+      break;
+    case "stt_device":
+      setSttUI(d.device);
+      break;
+    case "user_partial":
+      if (!partialUser) partialUser = addUser(d.text, true);
+      else partialUser.textContent = d.text;
+      scroll(); break;
+    case "user_final":
+      if (partialUser) { partialUser.remove(); partialUser = null; }
+      lastUser = addUser(d.text, false); break;
+    case "user_speaker":
+      if (lastUser && d.name) {
+        let who = lastUser.querySelector(".who");
+        if (!who) {
+          who = document.createElement("div");
+          who.className = "who";
+          lastUser.prepend(who);
+        }
+        who.textContent = d.name;
+      }
+      if (d.is_new) addSys("👋 新しい声を覚えました: " + d.name);
+      break;
+    case "user_tone":
+      if (lastUser && d.label && d.label.indexOf("いつも通り") < 0) {
+        const t = document.createElement("div");
+        t.className = "tone";
+        t.textContent = "🎵 " + d.label;
+        lastUser.appendChild(t); scroll();
+      }
+      break;
+    case "assistant_start":
+      if (currentAI) currentAI.classList.remove("streaming");
+      currentAI = addAI(); break;
+    case "emotion":
+      currentEmotion = d.emotion === "neutral" ? null : d.emotion;
+      break;
+    case "search_start":
+      addSys("🔍 Web検索中: " + d.query); break;
+    case "search_done":
+      if (!d.found) addSys("検索結果が見つかりませんでした");
+      break;
+    case "tool_search_result": {
+      const r = d.result || {};
+      if (r.title && r.url) addSys("🔎 " + r.title + "\n" + r.url);
+      break;
+    }
+    case "assistant_token":
+      if (currentAI) {
+        currentAI.querySelector(".body").textContent += d.token;
+        scroll();
+      }
+      break;
+    case "assistant_done":
+      if (currentAI) {
+        currentAI.classList.remove("streaming");
+        // Streaming is provisional.  The final text has passed the shared
+        // conversation contract (grounding/question policy), so replace the
+        // bubble rather than leaving a rejected fragment visible.
+        if (typeof d.text === "string") {
+          currentAI.querySelector(".body").textContent = d.text;
+        }
+      }
+      break;
+    case "assistant_cancelled":
+      if (currentAI) {
+        currentAI.classList.remove("streaming");
+        currentAI.classList.add("cancelled");
+        currentAI.querySelector(".body").textContent += " …(中断)";
+      }
+      break;
+    case "latency": {
+      if (currentAI && d.items) {
+        const lat = document.createElement("div");
+        lat.className = "lat";
+        lat.innerHTML = d.items.map((x) =>
+          '<span class="' + (x.label === "合計" ? "total" : "") + '">' +
+          esc(x.label) + " " + x.ms + "ms</span>").join("");
+        currentAI.appendChild(lat); scroll();
+      }
+      break;
+    }
+    case "vision_frame":
+      if (d.image) addShot(d.image, d.source, d.source_name);
+      break;
+    case "discord_state":
+      setDiscordUI(!!d.connected, d.channel || "");
+      break;
+    case "discord_members": {
+      const memberStatus = $("dcMemberStatus");
+      if (memberStatus) {
+        const names = (d.members || []).map((m) => m.name).join(", ");
+        memberStatus.textContent = "参加者 " + (d.count || 0) + "人" + (names ? ": " + names : "");
+      }
+      break;
+    }
+    case "discord_receive_status": {
+      const status = $("dcReceiveStatus");
+      if (status) {
+        const mode = d.mode === "direct_dave" ? "DAVE直接受信" : "ループバック";
+        status.textContent = mode + ": " + (d.message || (d.ready ? "利用可能" : "利用不可"));
+      }
+      break;
+    }
+    case "discord_partial": {
+      if (!partialDiscordUser) {
+        partialDiscordUser = addUser(d.text || "", true);
+        partialDiscordUser.classList.add("discord");
+      } else {
+        partialDiscordUser.textContent = d.text || "";
+      }
+      break;
+    }
+    case "discord_user": {
+      if (partialDiscordUser) { partialDiscordUser.remove(); partialDiscordUser = null; }
+      const el = addUser(d.text || "", false);
+      el.classList.add("discord");
+      const who = document.createElement("div");
+      who.className = "who";
+      who.textContent = "🎧 " + (d.name || "?");
+      el.prepend(who);
+      break;
+    }
+    case "discord_reply": {
+      const el = document.createElement("div");
+      el.className = "msg ai discord";
+      el.innerHTML = '<div class="name">🎧 ' + esc(personaName.toUpperCase()) +
+        '</div><div class="body"></div>';
+      el.querySelector(".body").textContent = d.reply || "";
+      chat.appendChild(el); scroll();
+      currentAI = el;
+      break;
+    }
+    case "music_video":
+      showVideoCard(d);
+      break;
+    case "local_music":
+      handleLocalMusic(d);
+      break;
+    case "speaker_changed": {
+      const sel = $("speakerSel");
+      if (sel) sel.value = String(d.speaker);
+      break;
+    }
+    case "mind_update": {
+      const note = (d.note || "").trim();
+      const chg = (d.changes || []).join(" ");
+      addSys("🌱 " + (note ? note : "なにかが少し変わった気がする…") + (chg ? " (" + chg + ")" : ""));
+      break;
+    }
+    case "research_question": {
+      const q = d.question || {};
+      const status = q.status || "";
+      if (status === "PENDING") {
+        addSys("🔎 裏で調べる課題に追加: " + (q.title || q.question || "調査課題"));
+      } else if (status === "WAITING_FOR_APPROVAL") {
+        addSys("🔎 調査には確認が必要です: " + (q.title || "調査課題"));
+      } else if (status === "BLOCKED") {
+        addSys("🔎 安全・プライバシー条件により裏検索を見送りました");
+      }
+      break;
+    }
+    case "research_progress": {
+      const run = d.run || {};
+      addSys("🔎 成長のための裏検索を開始: " + (run.sanitized_query || "登録済みの調査課題"));
+      break;
+    }
+    case "research_complete": {
+      const q = d.question || {};
+      const run = d.run || {};
+      addSys("🌱 裏検索が完了: " + (q.title || "調査課題") +
+        "（根拠 " + (run.source_count || 0) + "件）");
+      break;
+    }
+    case "interrupted":
+      break;
+    case "reset":
+      chat.innerHTML = ""; addSys("会話履歴をリセットしました"); break;
+    case "mic":
+      setMicUI(d.muted); break;
+    case "error":
+      addSys(d.message, true); break;
+    case "fatal":
+      addSys("起動エラー: " + d.message, true);
+      addSys("config/config.yaml と VOICEVOX の起動状態を確認してください", true);
+      break;
+  }
+}
+
+function setChips(info) {
+  currentInfo = Object.assign({}, currentInfo, info || {});
+  const ttsNames = {
+    voicevox: "VOICEVOX", style_bert_vits2: "Style-Bert-VITS2",
+    qwen3: "Qwen3-TTS", null: "音声なし",
+  };
+  const ttsName = ttsNames[currentInfo.tts] || currentInfo.tts || "?";
+  $("chips").innerHTML =
+    '<div class="chip">LLM <b>' + esc(currentInfo.llm || "?") + "</b></div>" +
+    '<button type="button" id="ttsChip" class="chip tts-chip' + (ttsSwitching ? " switching" : "") +
+    '" aria-expanded="false" title="クリックして読み上げ音声を切り替え">TTS <b>' +
+    esc(ttsName) + (ttsSwitching ? " (切替中)" : "") + "</b></button>" +
+    '<div class="chip">STT <b>' + esc(currentInfo.stt || "?") + "</b></div>";
+  updateTtsPopover(currentInfo.tts || "");
+}
+
+function updateTtsPopover(activeBackend) {
+  document.querySelectorAll("#ttsPop .tts-option").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.tts === activeBackend);
+    btn.disabled = ttsSwitching;
+  });
+}
+
+function closeTtsPopover() {
+  $("ttsPop").classList.add("hidden");
+  const chip = $("ttsChip");
+  if (chip) chip.setAttribute("aria-expanded", "false");
+}
+
+function setTtsVolumeUI(percent) {
+  const value = Math.max(0, Math.min(200, Number(percent) || 0));
+  $("ttsVolumeSlider").value = String(value);
+  $("ttsVolumeValue").textContent = Math.round(value) + "%";
+}
+
+async function loadTtsVolume() {
+  if (!apiReady) return;
+  try {
+    const result = await window.pywebview.api.get_tts_volume();
+    if (result && result.ok) setTtsVolumeUI(result.percent);
+  } catch (e) { /* 起動直後は無視 */ }
+}
+
+function setMicUI(muted) {
+  const btn = $("micBtn");
+  btn.className = "ctl " + (muted ? "off" : "on");
+  btn.textContent = muted ? "🔇" : "🎤";
+}
+
+function setSpeakerUI(muted) {
+  const btn = $("spkBtn");
+  btn.className = "ctl " + (muted ? "off" : "");
+  btn.textContent = muted ? "🔇" : "🔊";
+}
+
+function setState(state, level) {
+  // 疑似感情: 考え中〜発話中はオーブを感情色にする
+  const emo = currentEmotion && (state === "speaking" || state === "thinking")
+    ? " emo-" + currentEmotion : "";
+  orb.className = "orb " + (state === "listening" ? "" : state) + emo;
+  const icon = currentEmotion && state === "speaking" ? EMO_ICON[currentEmotion] || "" : "";
+  stateLabel.textContent = (STATE_TEXT[state] || state) + (icon ? " " + icon : "");
+  if (state === "listening") {
+    orb.style.transform = "scale(" + (1 + Math.min(level * 1.6, 0.5)) + ")";
+  } else {
+    orb.style.transform = "";
+  }
+  const bars = document.querySelectorAll("#meter i");
+  bars.forEach((b, i) => {
+    const h = state === "listening"
+      ? Math.max(8, Math.min(100, level * 240 * (0.55 + Math.sin(Date.now() / 90 + i * 1.7) * 0.45)))
+      : 8;
+    b.style.height = h + "%";
+  });
+}
+
+function setVisionUI(on) {
+  $("visionBtn").className = "ctl " + (on ? "on" : "off");
+}
+
+function setSearchUI(on) {
+  $("searchBtn").className = "ctl " + (on ? "on" : "off");
+}
+
+function setProactiveUI(on) {
+  $("proactiveBtn").className = "ctl " + (on ? "on" : "off");
+}
+
+function setCognitionTestUI(status) {
+  const btn = $("cognitionTestBtn");
+  if (!btn) return;
+  const mode = (status || {}).rollout_mode || "disabled";
+  const on = !!(status || {}).effective_cognition_enabled;
+  btn.textContent = mode === "production_session" ? "認知: PROD" :
+    mode === "test_session" ? "認知: TEST" : "認知: OFF";
+  btn.classList.toggle("active", on);
+}
+
+function setSttUI(device) {
+  const btn = $("sttBtn");
+  const isCpu = device === "cpu";
+  btn.textContent = "STT: " + (isCpu ? "CPU" : "GPU");
+  btn.className = "mini-wide " + (isCpu ? "cpu" : "gpu");
+}
+
+function updateVisionDebug(v) {
+  if (!v || !$('visionDebugCounts')) return;
+  const n = (x, suffix) => x == null ? '-' : String(x) + (suffix || '');
+  $('visionDebugCounts').textContent =
+    '状態 ' + (v.worker_state || '-') + ' / 取得 ' + (v.capture_count || 0) +
+    ' / 解析 ' + (v.analysis_count || 0) + ' / 破棄 ' + (v.dropped_frame_count || 0) +
+    ' / キュー ' + (v.latest_frame_queue_size || 0);
+  $('visionDebugAges').textContent =
+    '最新フレーム ' + n(v.latest_frame_age_sec, '秒前') +
+    ' / 最新認識 ' + n(v.latest_observation_age_sec, '秒前') +
+    ' / 差分 ' + n(v.motion_score, '');
+  const m = v.metrics || {};
+  $('visionDebugLatency').textContent =
+    '取得 ' + n(m.frame_capture_ms, 'ms') + ' / encode ' + n(m.frame_encode_ms, 'ms') +
+    ' / queue ' + n(m.queue_wait_ms, 'ms') + ' / Vision ' + n(m.vision_request_ms, 'ms') +
+    ' / memory ' + n(m.visual_memory_update_ms, 'ms') +
+    ' / 平均 ' + n(v.average_vision_latency_ms, 'ms') +
+    ' / GPU ' + n(v.gpu_percent, '%') +
+    ' / VRAM ' + n(v.vram_used_mb, 'MB');
+  $('visionDebugScene').textContent = '現在状態: ' + (v.current_scene || '-');
+  if (v.reaction_suppressed_reason) {
+    $('visionDebugScene').textContent += ' / 自発反応抑制: ' + v.reaction_suppressed_reason;
+  }
+}
+
+async function poll() {
+  if (!apiReady) return;
+  try {
+    const r = await window.pywebview.api.poll();
+    (r.events || []).forEach(handleEvent);
+    setState(r.state, r.level || 0);
+    setMicUI(!!r.muted);  // Discord(mix)中はBotの本人マイク取り込みの状態を反映
+    setSpeakerUI(!!r.speaker_muted);
+    setDcQuickUI(!!r.discord, r.discord_channel || "");
+    setVisionUI(!!r.vision);
+    setSearchUI(!!r.search);
+    setProactiveUI(!!r.proactive);
+    setCognitionTestUI(r.cognition_session);
+    updateVisionDebug(r.vision_debug || {});
+  } catch (e) { /* 起動直後は無視 */ }
+}
+
+async function loadSpeakers(showMsg) {
+  if (!apiReady) return;
+  const sel = $("speakerSel");
+  const btn = $("refreshBtn");
+  btn.classList.add("spinning");
+  try {
+    const r = await window.pywebview.api.get_speakers();
+    if (r.ok) {
+      sel.innerHTML = r.speakers.map((s) =>
+        '<option value="' + escAttr(s.key || s.id) + '"' +
+        (String(s.key || s.id) === String(r.current) ? " selected" : "") + ">" +
+        esc(s.label) + "</option>").join("");
+      sel.disabled = r.speakers.length === 0;
+      if (showMsg) addSys("話者リストを更新しました (" + r.speakers.length + "件)");
+    } else {
+      sel.innerHTML = "<option>取得できません</option>";
+      sel.disabled = true;
+      if (showMsg) addSys(r.message, true);
+    }
+  } catch (e) {
+    if (showMsg) addSys("話者リストの取得に失敗しました", true);
+  } finally {
+    btn.classList.remove("spinning");
+  }
+}
+
+async function sendText() {
+  const input = $("input");
+  const text = input.value.trim();
+  if (!text || !apiReady) return;
+  input.value = "";
+  await window.pywebview.api.send_text(text);
+}
+
+window.addEventListener("pywebviewready", () => {
+  apiReady = true;
+  setInterval(poll, 80);
+});
+
+$("sendBtn").addEventListener("click", sendText);
+$("input").addEventListener("keydown", (e) => { if (e.key === "Enter") sendText(); });
+$("micBtn").addEventListener("click", async () => {
+  if (!apiReady) return;
+  const muted = await window.pywebview.api.toggle_mic();
+  setMicUI(muted);
+});
+$("spkBtn").addEventListener("click", async () => {
+  if (!apiReady) return;
+  const muted = await window.pywebview.api.toggle_speaker();
+  setSpeakerUI(muted);
+});
+$("stopBtn").addEventListener("click", () => { if (apiReady) window.pywebview.api.interrupt(); });
+$("resetBtn").addEventListener("click", () => { if (apiReady) window.pywebview.api.reset(); });
+$("refreshBtn").addEventListener("click", () => loadSpeakers(true));
+$("speakerSel").addEventListener("change", (e) => {
+  if (!apiReady) return;
+  const sel = e.target;
+  const label = sel.options[sel.selectedIndex].textContent;
+  window.pywebview.api.set_speaker(sel.value, label);
+});
+
+$("chips").addEventListener("click", (e) => {
+  const chip = e.target.closest("#ttsChip");
+  if (!chip || ttsSwitching) return;
+  const pop = $("ttsPop");
+  const opening = pop.classList.contains("hidden");
+  pop.classList.toggle("hidden", !opening);
+  chip.setAttribute("aria-expanded", opening ? "true" : "false");
+});
+
+$("ttsPop").addEventListener("click", async (e) => {
+  const option = e.target.closest(".tts-option");
+  if (!option || !apiReady || ttsSwitching) return;
+  const backend = option.dataset.tts;
+  closeTtsPopover();
+  const result = await window.pywebview.api.set_tts_backend(backend);
+  if (!result || !result.ok) {
+    addSys((result && result.message) || "読み上げ音声を切り替えられませんでした", true);
+  } else if (!result.changed) {
+    loadSpeakers(false);
+  }
+});
+
+$("ttsVolumeSlider").addEventListener("input", (e) => setTtsVolumeUI(e.target.value));
+$("ttsVolumeSlider").addEventListener("change", async (e) => {
+  if (!apiReady) return;
+  const result = await window.pywebview.api.set_tts_volume(e.target.value);
+  if (!result || !result.ok) {
+    addSys((result && result.message) || "AI音声の音量を変更できませんでした", true);
+    await loadTtsVolume();
+  }
+});
+
+document.addEventListener("click", (e) => {
+  if (!e.target.closest("#ttsPop") && !e.target.closest("#ttsChip")) closeTtsPopover();
+});
+
+/* ===== こころステータス (育成画面) ===== */
+function hearts(score) {
+  const n = Math.min(3, Math.max(1, Math.round(Math.abs(score) * 3)));
+  return (score > 0 ? "♥" : "・").repeat(score > 0 ? n : 1);
+}
+function fmtDate(ts) {
+  const d = new Date(ts * 1000);
+  return (d.getMonth() + 1) + "/" + d.getDate();
+}
+
+function renderStorageCapacity(capacity) {
+  capacity = capacity || {};
+  const labels = {ok: "正常", warning: "警告", unknown: "不明"};
+  const percent = (value) => {
+    const present = value !== null && value !== undefined &&
+      !(typeof value === "string" && value.trim() === "");
+    return present && Number.isFinite(Number(value))
+      ? Number(value).toFixed(1) + "%" : "不明";
+  };
+  const measured = capacity.measurement_path
+    ? " / 測定先: " + esc(capacity.measurement_path) : "";
+  return '<div class="mind-summary">保存容量: ' +
+    esc(labels[capacity.state] || "不明") + " / 空き: " +
+    esc(percent(capacity.free_percent)) + " / 警告しきい値: " +
+    esc(percent(capacity.warning_threshold_percent)) + measured + "</div>";
+}
+
+function renderMind(s) {
+  s = (s && typeof s === "object") ? s : { enabled: false, error: "invalid status payload" };
+  $("mindName").textContent = (s.name || "AI") + " のこころ";
+  const mood = s.mood || {};
+  $("mindMoodOrb").textContent = mood.emoji || "🙂";
+  $("mindMoodLabel").textContent =
+    "きぶん: " + (mood.label || "--") +
+    "  /  なかよし度 Lv." + ((s.relationship || {}).level ?? "-") +
+    " " + ((s.relationship || {}).label || "");
+
+  const grid = $("mindGrid");
+  if (!s.enabled) {
+    grid.innerHTML = '<div class="mind-card wide"><div class="mind-empty">' +
+      esc(s.error || "こころ機能 (mind) が無効です。config.yaml の mind.enabled を true にしてください。") +
+      "</div></div>";
+    return;
+  }
+  const rel = s.relationship || {};
+  const relState = s.relationship_state || {};
+  const relStyle = relState.style || {};
+  const relEvents = (relState.recent_events || []).slice(-4).reverse().map((e) =>
+    '<div class="mind-item"><span class="k">' + esc(e.event_type || "event") + '</span><span>' + esc(e.summary || "変化") + "</span></div>").join("") ||
+    '<div class="mind-empty">まだ関係性イベントはありません</div>';
+  const relNext = rel.next == null
+    ? "MAX"
+    : rel.familiarity + " / " + rel.next;
+  const traitRows = (s.traits || []).map((t) =>
+    '<div class="trait-row"><span class="t-name">' + esc(t.label) + "</span>" +
+    '<div class="trait-bar"><i style="width:' + Math.round(t.value * 100) + '%"></i></div>' +
+    '<span class="t-val">' + Math.round(t.value * 100) + "</span></div>").join("");
+
+  const likes = (s.likes || []).filter((l) => Math.abs(l.score) >= 0.1);
+  const likeChips = likes.length
+    ? likes.map((l) =>
+        '<span class="like-chip ' + (l.score > 0 ? "pos" : "neg") + '">' +
+        (l.score > 0 ? '<span class="hearts">' + hearts(l.score) + "</span>" : "💧") +
+        esc(l.topic) + "</span>").join("")
+    : '<div class="mind-empty">まだ好みが育っていません。たくさん話しかけてみて</div>';
+
+  const hist = (s.history || []).length
+    ? s.history.map((h) =>
+        '<div class="mind-item"><span class="when">' + esc(h.time || "") + "</span>" +
+        "<span>" + esc(h.text || "") + "</span></div>").join("")
+    : '<div class="mind-empty">まだ変化はありません。会話を重ねると性格が少しずつ育ちます</div>';
+
+  const mem = s.memory || {};
+  const memList = (s.recent_memories || []).length
+    ? s.recent_memories.map((m) =>
+        '<div class="mind-item"><span class="when">' + fmtDate(m.created_at) + "</span>" +
+        '<span class="k ' + esc(m.kind) + '">' + esc(m.kind) + "</span>" +
+        "<span>" + esc(m.text) + "</span></div>").join("")
+    : '<div class="mind-empty">まだ長期記憶がありません</div>';
+  const runtime = s.runtime || {};
+  const localRuntime = runtime.local || {};
+  const heartbeat = localRuntime.heartbeat || {};
+  const autonomy = localRuntime.autonomy || {};
+  const autonomyState = autonomy.state || {};
+  const lastEval = localRuntime.last_evaluation || {};
+  const research = s.research || {};
+  const researchWorker = research.worker || {};
+  const researchSeed = research.self_seed || {};
+  const researchSeedReasonLabels = {
+    startup_delay: "起動待ち",
+    cooldown: "次回時刻待ち",
+    queue_not_idle: "既存の調査を優先",
+    no_public_interest_candidates: "公開の興味候補なし",
+    persona_curiosity_cooldown: "興味検索の間隔待ち",
+    persona_interest_selected: "興味から課題を作成",
+    no_gate_eligible_interest: "安全・重複判定で見送り",
+    disabled: "無効",
+  };
+  const researchSeedNext = researchSeed.next_attempt_at
+    ? new Date(researchSeed.next_attempt_at * 1000).toLocaleTimeString("ja-JP")
+    : "未定";
+  const researchReasonLabels = {
+    USER_REQUEST: "依頼",
+    KNOWLEDGE_GAP: "知識不足",
+    PERSONAL_CURIOSITY: "興味",
+    USER_INTEREST: "相手の関心",
+    OUTDATED_KNOWLEDGE: "更新確認",
+    CONFLICTING_INFORMATION: "情報矛盾",
+  };
+  const researchStatusLabels = {
+    PENDING: "待機",
+    APPROVED: "承認済み",
+    RESEARCHING: "調査中",
+    LEARNED: "確認済み",
+    PARTIALLY_LEARNED: "暫定",
+    WAITING_FOR_APPROVAL: "確認待ち",
+    BLOCKED: "安全上停止",
+    FAILED: "失敗",
+    ABANDONED: "重複・見送り",
+    EXPIRED: "期限切れ",
+  };
+  const renderResearchHistory = (items) => {
+    const rows = Array.isArray(items) ? items : [];
+    if (!rows.length) {
+      return '<div class="mind-empty">まだ調査履歴はありません。自律研究が動くとここに理由・状態・検索語が残ります</div>';
+    }
+    return rows.map((item) => {
+      const status = researchStatusLabels[item.status] || item.status || "不明";
+      const reason = researchReasonLabels[item.reason_code] || item.reason_code || "不明";
+      const when = item.updated_at ? new Date(item.updated_at * 1000).toLocaleString("ja-JP") : "";
+      const query = item.sanitized_query || item.question || "";
+      const failure = item.last_failure_reason
+        ? '<span style="color:#fca5a5"> / ' + esc(item.last_failure_reason) + '</span>'
+        : "";
+      return '<div class="mind-item"><span class="when">' + esc(when) + '</span>' +
+        '<span class="k">' + esc(status) + '</span><span><b>' + esc(item.title || "調査") +
+        '</b><br><small>理由: ' + esc(reason) + ' / 検索: ' + esc(query) + failure +
+        '</small></span></div>';
+    }).join("");
+  };
+  const recentResearchHtml = renderResearchHistory(s.recent_research || []);
+  const researchHistoryHtml =
+    '<div class="mind-card wide"><h4>自律研究・検索履歴</h4>' +
+    '<div class="mind-summary">自分の興味や知識不足から何を調べたか、なぜ調べたかを確認できます。会話音声・会話履歴全体・秘密情報は保存せず、調査用に限定した質問だけを扱います。</div>' +
+    '<div class="mind-list" id="researchHistoryList">' + recentResearchHtml + '</div>' +
+    '<div class="actions" style="margin-top:8px"><button class="mini-wide" id="researchHistoryLoad">履歴を更新・全件表示</button></div></div>';
+  const kernel = s.conversation_kernel || {};
+  const kernelTrace = kernel.decision_trace || {};
+  const kernelSearch = kernel.search_decision || {};
+  const kernelReference = kernel.reference_resolution || {};
+  const kernelHealth = kernel.health || {};
+  const kernelUpdated = kernel.updated_at
+    ? new Date(kernel.updated_at * 1000).toLocaleTimeString("ja-JP")
+    : "未更新";
+  const activity = s.activity || {};
+  const enabledLabel = (value) => value ? "稼働" : "停止";
+  const healthClass = (value) => value ? "pos" : "neg";
+  const heartbeatDetail = !heartbeat.enabled
+    ? "Heartbeat設定がOFF"
+    : !heartbeat.started
+      ? "音声パイプラインの開始待ち"
+      : heartbeat.paused
+        ? "一時停止中" + (localRuntime.proactive_suspended ? "（Discord参加中）" : "")
+        : heartbeat.task_alive ? "正常に監視中" : "タスク停止";
+  const lastReasons = (lastEval.suppression_reasons || []).join("、") || "なし";
+  const researchDetail = !research.enabled
+    ? "設定がOFF"
+    : research.paused
+      ? "一時停止中"
+      : research.active_question_id
+        ? "調査を実行中"
+        : (research.queued || research.pending)
+          ? "調査開始待ち"
+          : "調査課題なし（正常待機）";
+  const diagnosticsHtml =
+    '<div class="mind-card wide"><h4>機能の稼働状況</h4>' +
+    '<div class="like-chips">' +
+    '<span class="like-chip ' + healthClass(!!localRuntime.proactive_enabled) + '">自発モード: ' +
+      enabledLabel(!!localRuntime.proactive_enabled) + '</span>' +
+    '<span class="like-chip ' + healthClass(!!heartbeat.task_alive && !heartbeat.paused) + '">Heartbeat: ' +
+      esc(heartbeatDetail) + '</span>' +
+    '<span class="like-chip ' + healthClass(!!research.enabled && !research.paused) + '">自律研究: ' +
+      esc(researchDetail) + '</span>' +
+    '<span class="like-chip ' + healthClass(!!kernel.turn_id && kernelHealth.state !== "STALE") + '">会話Kernel: ' +
+      esc(kernel.turn_id ? (kernelHealth.state === "STALE" ? "古いTrace" : "正常") : "次の会話待ち") + '</span></div>' +
+    '<div class="mind-summary" style="white-space:pre-line">自発判断: ' +
+      esc(lastEval.final_action || "未評価") +
+      '\n見送り理由: ' + esc(lastReasons) +
+      '\nHeartbeat回数: ' + esc(heartbeat.heartbeat_fired_count ?? 0) +
+      ' / 失敗: ' + esc(heartbeat.heartbeat_failures ?? 0) +
+      '\n保留話題: ' + esc((autonomyState.open_threads || []).length) +
+      ' / 稼働中の自発タスク: ' + (localRuntime.autonomous_turn_alive ? "あり" : "なし") +
+      '\n裏検索キュー: ' + esc(research.queued ?? 0) +
+      ' / 実行中: ' + esc(research.active_question_id || "なし") +
+      ' / 完了: ' + esc(((research.metrics || {}).runs_completed) ?? 0) +
+      ' / 失敗: ' + esc(((research.metrics || {}).runs_failed) ?? 0) +
+      '\n興味からの次回判定: ' + esc(researchSeed.enabled === false ? "無効" : researchSeedNext) +
+      ' / 直近理由: ' + esc(
+        researchSeedReasonLabels[researchSeed.last_reason] ||
+        researchSeed.last_reason || "未評価"
+      ) +
+      '\nTurn ID: ' + esc(kernel.turn_id || "未生成") +
+      '\nDecision ID: ' + esc(kernel.decision_id || "未生成") +
+      '\nResponse ID: ' + esc(kernel.response_id || "未生成") +
+      '\n経路 / 更新: ' + esc((kernel.source || "-") + " / " + kernelUpdated) +
+      '\n会話義務: ' + esc((kernel.obligations || []).join(" → ") || "未評価") +
+      '\n判断理由: ' + esc(kernel.decision_reason || "未評価") +
+      '\n応答目標: ' + esc(kernel.response_goal || "未評価") +
+      '\n参照解決: ' + esc((kernelReference.status || "未評価") +
+        (kernelReference.requires_clarification ? "（確認が必要）" : "")) +
+      '\n検索方針: ' + esc((kernelSearch.allowed === false ? "禁止" : "許可") +
+        " / " + (kernelSearch.reason_code || "未評価") +
+        " / 実行=" + (kernelSearch.executed ? "あり" : "なし")) +
+      '\n採用記憶 / 却下記憶: ' +
+        esc((kernelTrace.selected_memory_ids || []).length) + " / " +
+        esc((kernelTrace.rejected_memory_ids || []).length) +
+      '\n活動状態: ' + esc(activity.status || "なし") +
+      ' / version=' + esc(kernel.activity_state_version ?? activity.state_version ?? 0) +
+      ' / actor=' + esc(activity.current_actor_id || "なし") +
+      (activity.public_state ? " / 次=" + esc(activity.public_state.required_kana || "自由") : "") +
+      '\nKernel health: ' + esc(kernelHealth.state || "未評価") +
+      (heartbeat.last_error ? '\nHeartbeatエラー: ' + esc(heartbeat.last_error) : '') +
+      (researchWorker.last_error ? '\n裏検索エラー: ' + esc(researchWorker.last_error) : '') +
+      '</div></div>';
+  const directiveState = s.behavior_directive || {};
+  const directive = directiveState.active || null;
+  const directiveRecent = directiveState.recent || [];
+  const directiveDuration = directive && directive.remaining_seconds != null
+    ? Math.round(directive.remaining_seconds) + "秒"
+    : "指定なし";
+  const directiveHtml =
+    '<div class="mind-card wide"><h4>継続中の依頼 (BehaviorDirective)</h4>' +
+    '<div class="like-chips">' +
+    '<span class="like-chip ' + healthClass(!!directiveState.enabled) + '">基盤: ' +
+      enabledLabel(!!directiveState.enabled) + '</span>' +
+    '<span class="like-chip ' + healthClass(!!directive) + '">状態: ' +
+      esc(directive ? directive.status : "依頼なし") + '</span>' +
+    (directive ? '<span class="like-chip">' + esc(directive.execution_mode) + '</span>' +
+      '<span class="like-chip">' + esc(directive.interaction_mode) + '</span>' : '') +
+    '</div>' +
+    '<div class="mind-summary" style="white-space:pre-line">' +
+    (directive
+      ? '目的: ' + esc(directive.interpreted_goal || "-") +
+        '\n継続方針: ' + esc(directive.continuation_policy) +
+        '\n経過 / 残り: ' + esc(Math.round(directive.elapsed_seconds || 0)) + '秒 / ' + esc(directiveDuration) +
+        '\n完了区間 / 待機: ' + esc(directive.completed_segment_count ?? 0) +
+          ' / ' + esc(directive.waited_segment_count ?? 0) +
+        '\n現在の話題: ' + esc(directive.current_topic || "未設定") +
+        '\n次の狙い: ' + esc(directive.next_action_hint || "未定") +
+        '\n使えるツール: ' + esc((directive.allowed_tools || []).join("、") || "なし") +
+        '\n検索方針: ' + esc(directive.search_policy) +
+        '\n終了条件: ' + esc((directive.stop_conditions || []).join(" / ") || "未設定") +
+        (directive.pause_reason ? '\n一時停止の理由: ' + esc(directive.pause_reason) : '') +
+        (directive.last_error ? '\n直近のエラー: ' + esc(directive.last_error) : '')
+      : '継続依頼はありません。「しばらく話して」「終わるまで実況して」などで作成されます。') +
+    '\n作成 / 完了 / 中止: ' + esc(((directiveState.metrics || {}).directives_created) ?? 0) +
+      ' / ' + esc(((directiveState.metrics || {}).directives_completed) ?? 0) +
+      ' / ' + esc(((directiveState.metrics || {}).directives_cancelled) ?? 0) +
+    '\n区間 発話 / 待機 / 破棄: ' + esc(((directiveState.metrics || {}).segments_spoken) ?? 0) +
+      ' / ' + esc(((directiveState.metrics || {}).segments_waited) ?? 0) +
+      ' / ' + esc(((directiveState.metrics || {}).segments_discarded_stale) ?? 0) +
+    '\n割り込み / ループ検出: ' + esc(((directiveState.metrics || {}).human_interruptions) ?? 0) +
+      ' / ' + esc(((directiveState.metrics || {}).directive_loops_detected) ?? 0) +
+    (directiveRecent.length
+      ? '\n直近の履歴: ' + esc(directiveRecent.map((x) =>
+          (x.execution_mode || "-") + "→" + (x.status || "-") +
+          "(" + (x.segments ?? 0) + "区間)").join(" / "))
+      : '') +
+    '</div></div>';
+  const dbg = s.conversation_debug || null;
+  let debugHtml = "";
+  if (dbg) {
+    const plan = ((dbg.conversation_generation || {}).last_plan) || {};
+    const trace = dbg.developer_trace || {};
+    const metrics = dbg.quality_metrics || {};
+    const critic = trace.critic || ((dbg.conversation_generation || {}).last_critique) || {};
+    const selected = (trace.selected_features || []).join("、") || "なし";
+    const realized = (trace.realized_features || []).join("、") || "なし";
+    const rejected = (trace.rejected_features || []).map((x) =>
+      esc(x.feature || "?") + "（" + esc((x.reasons || []).join(", ")) + "）").join(" / ") || "なし";
+    const learned = (trace.learning_updates || []).map((x) =>
+      esc(x.feature || "") + ": " + esc(x.old_weight) + "→" + esc(x.weight)).join(" / ") || "なし";
+    const ab = dbg.ab_comparison || {};
+    debugHtml =
+      '<div class="mind-card wide"><h4>会話エンジン観測 <b>' + esc(trace.variant || plan.engine_variant || "-") + '</b></h4>' +
+      '<div class="mind-summary" style="white-space:pre-line">意図: ' + esc(trace.intent || plan.intent || "-") +
+      '\n感情: user=' + esc((trace.user_emotion || {}).label || "-") + ' / AI=' + esc(trace.ai_emotion || plan.ai_emotion || "-") +
+      '\n会話温度: ' + esc(trace.temperature || plan.temperature || "-") +
+      '\n提案: ' + esc((trace.proposed_features || []).join("、") || "なし") +
+      '\n採用: ' + esc(selected) +
+      '\n発話反映: ' + esc(realized) +
+      '\n却下: ' + rejected +
+      '\nCritic: ' + esc((critic.detected_problems || critic.issues || []).join("、") || "問題なし") +
+      '\n学習: ' + learned + '</div></div>' +
+      '<div class="mind-card"><h4>品質メトリクス</h4><div class="mind-summary" style="white-space:pre-line">同一開始率 ' + esc(metrics.same_opening_rate ?? "-") +
+      '\n同一語尾率 ' + esc(metrics.same_ending_rate ?? "-") + '\n質問終了率 ' + esc(metrics.question_ending_rate ?? "-") +
+      '\n直前類似度 ' + esc(metrics.previous_reply_similarity ?? "-") + '\n機能採用率 ' + esc(metrics.feature_adoption_rate ?? "-") +
+      '\n機能反映率 ' + esc(metrics.feature_realization_rate ?? "-") +
+      '\nPlanner ' + esc(metrics.planning_ms ?? 0) + 'ms</div></div>' +
+      '<div class="mind-card"><h4>A/B比較</h4><div class="mind-summary" style="white-space:pre-line">設定: ' + esc((ab.configured_variant || "-")) +
+      '\nbaseline: ' + esc(((ab.baseline || {}).expected_character || "-")) +
+      '\nenhanced: ' + esc(((ab.enhanced || {}).expected_character || "-")) +
+      '\nexperimental: ' + esc(((ab.experimental || {}).expected_character || "-")) + '</div></div>';
+  }
+
+  const spk = s.speakers || [];
+  const mergeHints = s.speaker_merge_candidates || [];
+  const mergeHintHtml = mergeHints.length
+    ? '<div class="mind-summary" style="white-space:pre-line">🔗 同一人物かもしれない組み合わせ:\n' +
+      mergeHints.map((c) =>
+        "・「" + esc(c.source_name) + "」と「" + esc(c.target_name) + "」" +
+        "（声紋の一致度 " + Math.round((c.score || 0) * 100) + "%）" +
+        '<button class="spk-btn" data-act="mergepair" data-src="' + c.source_id +
+        '" data-dst="' + c.target_id + '" data-nm="' + escAttr(c.source_name) +
+        '" data-onm="' + escAttr(c.target_name) + '" title="同一人物として統合">統合</button>'
+      ).join("\n") +
+      "\n※別人なら操作は不要です。統合すると なかよし度・会話プロファイルもまとまります。</div>"
+    : "";
+  const spkRows = spk.length
+    ? spk.map((p) => {
+        const pr = p.relationship || {};
+        const relBadge = pr.label
+          ? '<span class="badge rel" title="この人との親密度">💗Lv.' +
+            (pr.level ?? 0) + " " + esc(pr.label) + "</span>"
+          : "";
+        const relBar = pr.label
+          ? '<div class="spk-relbar" title="次のレベルまで"><i style="width:' +
+            Math.round((pr.progress || 0) * 100) + '%"></i></div>'
+          : "";
+        const aliasPairs = Object.entries(p.aliases || {});
+        const aliasBadge = aliasPairs.length
+          ? '<span class="badge" title="場面ごとの呼び名">' +
+            esc(aliasPairs.map(([k, v]) => k + "=" + v).join(" / ")) + "</span>"
+          : "";
+        return '<div class="spk-row"><span class="nm">' + esc(p.name) + "</span>" +
+        (p.auto_name ? '<span class="badge">名前未学習</span>' : "") +
+        aliasBadge +
+        relBadge +
+        '<span class="meta">会話 ' + p.turns + "回 / " + esc(p.first_met || "") + "〜</span>" +
+        relBar +
+        '<button class="spk-btn" data-act="ren" data-id="' + p.id + '" data-nm="' + escAttr(p.name) + '" title="名前を変更">✏</button>' +
+        '<button class="spk-btn" data-act="merge" data-id="' + p.id + '" data-nm="' + escAttr(p.name) + '" title="別の話者と同一人物として統合">🔗</button>' +
+        '<button class="spk-btn del" data-act="del" data-id="' + p.id + '" data-nm="' + escAttr(p.name) + '" title="忘れる">🗑</button></div>';
+      }).join("")
+    : '<div class="mind-empty">' +
+      (s.speaker_id_enabled
+        ? "まだ誰の声も覚えていません。話しかけると自動で覚えます"
+        : "話者識別は無効です (onnxruntime 未導入か speaker.enabled: false)") + "</div>";
+
+  grid.innerHTML =
+    '<div class="mind-card wide"><h4>はなし相手 (声で識別)</h4>' + mergeHintHtml + spkRows + "</div>" +
+    '<div class="mind-card"><h4>なかよし度 <b>' + esc(rel.label || "") + "</b></h4>" +
+    '<div class="rel-level"><span class="lv">Lv.' + (rel.level ?? 0) + "</span>" +
+    "<small>" + relNext + "</small></div>" +
+    '<div class="rel-bar"><i style="width:' + Math.round((rel.progress || 0) * 100) + '%"></i></div>' +
+    '<div class="rel-meta"><span>知り合って <b>' + (rel.days || 1) + "日</b></span>" +
+    "<span>会話 <b>" + (rel.turns || 0) + "回</b></span>" +
+    "<span>はじめまして <b>" + esc(rel.first_met || "") + "</b></span></div></div>" +
+
+    '<div class="mind-card"><h4>関係性 <b>' + esc(relStyle.label || "neutral") + "</b></h4>" +
+    '<div class="mind-summary">' + esc(relState.description || "相手との関係性をまだ評価していません") + "</div>" +
+    '<div class="trait-row"><span class="t-name">信頼</span><div class="trait-bar"><i style="width:' + Math.round((relState.trust || 0) * 100) + '%"></i></div><span class="t-val">' + Math.round((relState.trust || 0) * 100) + "</span></div>" +
+    '<div class="trait-row"><span class="t-name">安心</span><div class="trait-bar"><i style="width:' + Math.round((relState.psychological_safety || 0) * 100) + '%"></i></div><span class="t-val">' + Math.round((relState.psychological_safety || 0) * 100) + "</span></div>" +
+    '<div class="trait-row"><span class="t-name">敬意</span><div class="trait-bar"><i style="width:' + Math.round((relState.respect || 0) * 100) + '%"></i></div><span class="t-val">' + Math.round((relState.respect || 0) * 100) + "</span></div>" +
+    '<div class="trait-row"><span class="t-name">警戒</span><div class="trait-bar"><i style="width:' + Math.round((relState.caution || 0) * 100) + '%"></i></div><span class="t-val">' + Math.round((relState.caution || 0) * 100) + "</span></div>" +
+    '<div class="trait-row"><span class="t-name">疲れ</span><div class="trait-bar"><i style="width:' + Math.round((relState.social_fatigue || 0) * 100) + '%"></i></div><span class="t-val">' + Math.round((relState.social_fatigue || 0) * 100) + "</span></div>" +
+    '<div class="trait-row"><span class="t-name">傷つき</span><div class="trait-bar"><i style="width:' + Math.round((relState.unresolved_hurt || 0) * 100) + '%"></i></div><span class="t-val">' + Math.round((relState.unresolved_hurt || 0) * 100) + "</span></div>" +
+    '<div class="trait-row"><span class="t-name">親しさ</span><div class="trait-bar"><i style="width:' + Math.round((relState.familiarity || 0) * 100) + '%"></i></div><span class="t-val">' + Math.round((relState.familiarity || 0) * 100) + "</span></div>" +
+    '<div class="trait-row"><span class="t-name">遊び心</span><div class="trait-bar"><i style="width:' + Math.round((relState.playfulness || 0) * 100) + '%"></i></div><span class="t-val">' + Math.round((relState.playfulness || 0) * 100) + "</span></div>" +
+    '<div class="trait-row"><span class="t-name">会話同期</span><div class="trait-bar"><i style="width:' + Math.round((relState.conversational_sync || 0) * 100) + '%"></i></div><span class="t-val">' + Math.round((relState.conversational_sync || 0) * 100) + "</span></div>" +
+    '<div class="mind-list" style="margin-top:8px">' + relEvents + "</div>" +
+    '<div class="actions" style="margin-top:8px"><button class="mini" id="relRecover" title="苛立ち・疲れだけを回復">一時回復</button><button class="mini" id="relReset" title="現在の相手との関係性を初期化">関係を初期化</button></div></div>' +
+
+    '<div class="mind-card"><h4>せいかく</h4>' + traitRows + "</div>" +
+
+    '<div class="mind-card wide"><h4>すき・きらい</h4><div class="like-chips">' +
+    likeChips + "</div></div>" +
+
+    '<div class="mind-card"><h4>さいきんの変化 🌱</h4><div class="mind-list">' +
+    hist + "</div></div>" +
+
+    '<div class="mind-card"><h4>きおく' +
+    (mem.semantic ? "" : ' <small style="color:var(--text-dim)">(キーワード検索モード)</small>') +
+    "</h4>" +
+    '<div class="mem-stats">' +
+    '<span class="chip">事実 <b>' + (mem.facts || 0) + "</b></span>" +
+    '<span class="chip">思い出 <b>' + (mem.episodes || 0) + "</b></span>" +
+    '<span class="chip">合計 <b>' + (mem.total || 0) + "</b></span></div>" +
+    renderStorageCapacity((mem.storage || {}).capacity || {}) +
+    (mem.session_summary
+      ? '<div class="mind-summary">いまの会話: ' + esc(mem.session_summary) + "</div>" : "") +
+    '<div class="mind-list">' + memList + "</div></div>" +
+    researchHistoryHtml + directiveHtml + diagnosticsHtml + debugHtml;
+
+  // はなし相手の ✏/🗑 ボタン
+  grid.querySelectorAll(".spk-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = parseInt(btn.dataset.id, 10);
+      const nm = btn.dataset.nm || "";
+      try {
+        if (btn.dataset.act === "ren") {
+          const name = window.prompt("この声の相手の名前:", nm);
+          if (!name || !name.trim()) return;
+          await window.pywebview.api.rename_speaker(id, name.trim());
+        } else if (btn.dataset.act === "mergepair") {
+          const src = parseInt(btn.dataset.src, 10), dst = parseInt(btn.dataset.dst, 10);
+          const onm = btn.dataset.onm || "";
+          if (!window.confirm("「" + nm + "」と「" + onm + "」を同一人物として統合しますか?\nこの操作は取り消せません。")) return;
+          const result = await window.pywebview.api.merge_speakers(src, dst);
+          if (!result.ok) { addSys(result.message || "統合に失敗しました", true); return; }
+        } else if (btn.dataset.act === "merge") {
+          const others = (s.speakers || []).filter((x) => x.id !== id);
+          if (!others.length) { addSys("統合できる相手がいません", true); return; }
+          const menu = others.map((x, i) => (i + 1) + ") " + x.name + " (会話" + x.turns + "回)").join("\n");
+          const pick = window.prompt(
+            "「" + nm + "」と同一人物にする相手の番号:\n" + menu +
+            "\n\n※なかよし度・会話プロファイル・学習した好みも統合されます", "1");
+          const index = parseInt(pick, 10) - 1;
+          if (!(index >= 0 && index < others.length)) return;
+          const other = others[index];
+          if (!window.confirm("「" + nm + "」と「" + other.name + "」を同一人物として統合しますか?\nこの操作は取り消せません。")) return;
+          // 会話回数が多い方を残す (履歴の長い側を正とする)
+          const keep = (other.turns >= (spk.find((x) => x.id === id) || {}).turns) ? other.id : id;
+          const drop = keep === id ? other.id : id;
+          const result = await window.pywebview.api.merge_speakers(drop, keep);
+          if (!result.ok) { addSys(result.message || "統合に失敗しました", true); return; }
+        } else {
+          if (!window.confirm("「" + nm + "」の声を忘れますか?")) return;
+          await window.pywebview.api.forget_speaker(id);
+        }
+        renderMind(await window.pywebview.api.get_mind_status());
+      } catch (e) { addSys("話者の更新に失敗しました", true); }
+    });
+  });
+  const recover = $("relRecover"), reset = $("relReset");
+  if (recover) recover.addEventListener("click", async () => renderMind((await window.pywebview.api.reset_relationship("", true)).status));
+  if (reset) reset.addEventListener("click", async () => {
+    if (window.confirm("現在の相手との関係性を初期状態へ戻しますか?")) {
+      const result = await window.pywebview.api.reset_relationship("", false);
+      if (result.ok) renderMind(result.status);
+    }
+  });
+  const researchHistoryLoad = $("researchHistoryLoad");
+  if (researchHistoryLoad) researchHistoryLoad.addEventListener("click", async () => {
+    const list = $("researchHistoryList");
+    researchHistoryLoad.disabled = true;
+    researchHistoryLoad.textContent = "取得中...";
+    try {
+      const result = await window.pywebview.api.get_research_history(100);
+      if (!result || !result.ok) throw new Error("履歴APIが利用できません");
+      if (list) list.innerHTML = renderResearchHistory(result.items || []);
+      researchHistoryLoad.textContent = "最新の履歴に更新しました";
+    } catch (e) {
+      if (list) list.innerHTML =
+        '<div class="mind-empty">調査履歴の取得に失敗しました: ' +
+        esc((e && (e.message || e.toString())) || "不明なエラー") + '</div>';
+      researchHistoryLoad.textContent = "再試行";
+    } finally {
+      researchHistoryLoad.disabled = false;
+    }
+  });
+}
+
+async function openMind() {
+  if (!apiReady) return;
+  $("mindOverlay").classList.remove("hidden");
+  $("mindGrid").innerHTML = '<div class="mind-card wide"><div class="mind-empty">こころステータスを取得中...</div></div>';
+  try {
+    const s = await window.pywebview.api.get_mind_status();
+    renderMind(s || { enabled: false });
+  } catch (e) {
+    const detail = (e && (e.message || e.toString())) || "不明なエラー";
+    $("mindGrid").innerHTML =
+      '<div class="mind-card wide"><h4>こころステータスを表示できません</h4>' +
+      '<div class="mind-summary">' + esc(detail) + '</div></div>';
+    addSys("こころステータスの表示に失敗しました: " + detail, true);
+  }
+}
+/* ===== 再生中の動画カード ===== */
+let videoCard = null;      // 現在表示中のカード要素
+let videoCardId = "";      // そのvideo_id
+let videoInfo = null;      // 最新のmusic_videoイベント内容
+
+function embedUrl(id, pos, mute) {
+  return "https://www.youtube.com/embed/" + encodeURIComponent(id) +
+    "?start=" + Math.max(0, Math.floor(pos || 0)) +
+    "&autoplay=1&mute=" + (mute ? 1 : 0) + "&rel=0";
+}
+
+function showVideoCard(d) {
+  videoInfo = d;
+  if (!d.video_id) {
+    // YouTube以外は埋め込めないのでリンク付きのsys行だけ
+    addSys("🎵 " + (d.title || "再生中") + " (映像の埋め込みに非対応のソース)");
+    return;
+  }
+  const src = embedUrl(d.video_id, d.pos, true);  // ツール内はミュート再生 (音はVCから)
+  if (videoCard && videoCardId === d.video_id && document.body.contains(videoCard)) {
+    // 同じ動画 → シーク/速度変更に合わせて位置だけ同期
+    videoCard.querySelector("iframe").src = src;
+    videoCard.querySelector(".vcap").textContent = videoCapText(d);
+    scroll();
+    return;
+  }
+  const el = document.createElement("div");
+  el.className = "video-card";
+  el.innerHTML =
+    '<div class="vhead"><span class="vtitle">🎵 ' + esc(d.title || "") + "</span>" +
+    '<button type="button" class="vbtn" data-act="eye" title="画面表示ON/OFF">📺</button>' +
+    '<button type="button" class="vbtn" data-act="browser" title="ブラウザで開く (Discordの画面共有でみんなに見せる用)">🖥</button>' +
+    '<button type="button" class="vbtn" data-act="max" title="最大化 (ダブルクリックでも可)">⛶</button></div>' +
+    '<div class="vwrap"><iframe allow="autoplay; encrypted-media" allowfullscreen></iframe>' +
+    '<div class="vshield" title="ダブルクリックで最大化"></div></div>' +
+    '<div class="vcap"></div>';
+  el.querySelector('[data-act="eye"]').addEventListener("click", () => {
+    setVideoVisible(el, !videoVisible);
+  });
+  el.querySelector("iframe").src = src;
+  el.querySelector(".vcap").textContent = videoCapText(d);
+  el.querySelector('[data-act="browser"]').addEventListener("click", () => {
+    if (apiReady && videoInfo && videoInfo.webpage)
+      window.pywebview.api.open_music_page(videoInfo.webpage);
+  });
+  const openMax = () => {
+    if (!videoInfo || !videoInfo.video_id) return;
+    $("videoFull").src = embedUrl(videoInfo.video_id, videoInfo.pos, true);
+    $("videoOverlay").classList.remove("hidden");
+  };
+  el.querySelector('[data-act="max"]').addEventListener("click", openMax);
+  el.querySelector(".vshield").addEventListener("dblclick", openMax);
+  chat.appendChild(el);
+  videoCard = el;
+  videoCardId = d.video_id;
+  setVideoVisible(el, videoVisible);
+  scroll();
+}
+
+function videoCapText(d) {
+  const p = Math.max(0, Math.floor(d.pos || 0));
+  const t = Math.floor(p / 60) + ":" + String(p % 60).padStart(2, "0");
+  const sp = d.speed && Math.abs(d.speed - 1.0) > 0.01 ? " / " + d.speed + "倍速" : "";
+  return "▶ " + t + " 付近から同期表示 (音はVC側)" + sp + " — ダブルクリックで最大化";
+}
+
+/* ===== ローカル再生 (Discord未接続時、ツール内で音あり再生) ===== */
+let localCard = null;      // ローカルプレイヤーのカード要素
+let localPlayer = null;    // YT.Player
+let localAudio = null;     // 埋め込み不可時の<audio>フォールバック
+let localVol = 10;         // ローカル再生の初期音量 (0〜100%)
+let videoVisible = (window.localStorage ? localStorage.getItem("videoVisible") : "1") !== "0";
+
+function ensureYtApi(cb) {
+  if (window.YT && window.YT.Player) { cb(); return; }
+  const prev = window.onYouTubeIframeAPIReady;
+  window.onYouTubeIframeAPIReady = () => { if (prev) prev(); cb(); };
+  if (!document.getElementById("ytApiScript")) {
+    const s = document.createElement("script");
+    s.id = "ytApiScript";
+    s.src = "https://www.youtube.com/iframe_api";
+    document.head.appendChild(s);
+  }
+}
+
+function setVideoVisible(card, visible) {
+  videoVisible = visible;
+  try { localStorage.setItem("videoVisible", visible ? "1" : "0"); } catch (e) {}
+  const wrap = card.querySelector(".vwrap");
+  if (wrap) wrap.classList.toggle("video-hidden", !visible);
+  const btn = card.querySelector('[data-act="eye"]');
+  if (btn) btn.textContent = visible ? "📺" : "🙈";
+}
+
+function destroyLocalPlayer(msg, notifyBackend = true) {
+  if (localPlayer) { try { localPlayer.destroy(); } catch (e) {} localPlayer = null; }
+  if (localAudio) { try { localAudio.pause(); } catch (e) {} localAudio = null; }
+  if (localCard) { localCard.remove(); localCard = null; }
+  if (notifyBackend && apiReady) window.pywebview.api.local_music_ended();
+  if (msg) addSys(msg);
+}
+
+function switchToAudioFallback(d) {
+  // 埋め込み禁止の動画 → yt-dlpの直接ストリームURLで音声のみ再生する
+  if (!localCard) return;
+  if (localPlayer) { try { localPlayer.destroy(); } catch (e) {} localPlayer = null; }
+  const wrap = localCard.querySelector(".vwrap");
+  if (!wrap) return;
+  if (!d.url) {
+    addSys("⚠ この動画は埋め込み再生が禁止されていて、音声リンクも取れなかった。🖥でブラウザで開いてね", true);
+    return;
+  }
+  wrap.classList.remove("video-hidden");
+  wrap.classList.add("audio-only");
+  wrap.innerHTML = "";
+  const audio = document.createElement("audio");
+  audio.controls = true;
+  audio.autoplay = true;
+  audio.volume = Math.min(1, localVol / 100);
+  audio.src = d.url;
+  audio.addEventListener("ended", () => destroyLocalPlayer("🎵 再生が終わったよ"));
+  audio.addEventListener("error", () => {
+    addSys("⚠ 音声ストリームの再生にも失敗。🖥ボタンでブラウザで開いてね", true);
+  });
+  wrap.appendChild(audio);
+  localAudio = audio;
+  const cap = localCard.querySelector(".vcap");
+  if (cap) cap.textContent = "♪ この動画は埋め込み禁止のため音声のみで再生中 (映像は🖥でブラウザへ)";
+  addSys("この動画は埋め込み再生が禁止されているので、音声だけで流すね");
+}
+
+function createLocalPlayer(d) {
+  // 曲の切替時は「再生終了」をバックエンドへ通知しない。
+  // 通知するとローカル音楽の再生中フラグがfalseになり、音声コマンドが効かなくなる。
+  destroyLocalPlayer(null, false);
+  const el = document.createElement("div");
+  el.className = "video-card";
+  el.innerHTML =
+    '<div class="vhead"><span class="vtitle">🎵 ' + esc(d.title || "") + "</span>" +
+    '<button type="button" class="vbtn" data-act="eye" title="画面表示ON/OFF (音は続く)">📺</button>' +
+    '<button type="button" class="vbtn" data-act="browser" title="ブラウザで開く">🖥</button>' +
+    '<button type="button" class="vbtn" data-act="max" title="最大化 (ダブルクリックでも可)">⛶</button>' +
+    '<button type="button" class="vbtn" data-act="stop" title="停止">⏹</button></div>' +
+    '<div class="vwrap"><div class="ytmount"></div></div>' +
+    '<div class="vcap">▶ ツール内で再生中 (音あり) — 「止めて」「10秒進めて」「2倍速」「音量下げて」も使えるよ</div>';
+  el.querySelector('[data-act="browser"]').addEventListener("click", () => {
+    if (apiReady && d.webpage) window.pywebview.api.open_music_page(d.webpage);
+  });
+  el.querySelector('[data-act="eye"]').addEventListener("click", () => {
+    setVideoVisible(el, !videoVisible);
+  });
+  const toggleMax = () => el.classList.toggle("maxi");
+  el.querySelector('[data-act="max"]').addEventListener("click", toggleMax);
+  el.querySelector(".vwrap").addEventListener("dblclick", toggleMax);
+  el.querySelector('[data-act="stop"]').addEventListener("click", () =>
+    destroyLocalPlayer("🎵 止めたよ"));
+  chat.appendChild(el);
+  localCard = el;
+  setVideoVisible(el, videoVisible);
+  scroll();
+  ensureYtApi(() => {
+    if (localCard !== el) return;  // 作成待ちの間に停止された
+    localPlayer = new YT.Player(el.querySelector(".ytmount"), {
+      videoId: d.video_id,
+      playerVars: { autoplay: 1, rel: 0 },
+      events: {
+        onReady: () => { try { localPlayer.setVolume(Math.min(100, localVol)); } catch (e) {} },
+        onStateChange: (ev) => {
+          if (ev.data === YT.PlayerState.ENDED) destroyLocalPlayer("🎵 再生が終わったよ");
+        },
+        onError: (ev) => {
+          // 101/150=埋め込み禁止, 100=非公開/削除, 2/5=その他
+          if (localCard === el) switchToAudioFallback(d);
+        },
+      },
+    });
+  });
+}
+
+function handleLocalMusic(d) {
+  if (d.action === "play") { createLocalPlayer(d); return; }
+  if (d.action === "stop") { destroyLocalPlayer("🎵 止めたよ"); return; }
+  const hasYt = localPlayer && typeof localPlayer.getCurrentTime === "function";
+  if (!hasYt && !localAudio) return;
+  try {
+    if (d.action === "seek") {
+      if (hasYt) localPlayer.seekTo(Math.max(0, localPlayer.getCurrentTime() + d.value), true);
+      else localAudio.currentTime = Math.max(0, localAudio.currentTime + d.value);
+      addSys((d.value >= 0 ? "⏩ " : "⏪ ") + Math.abs(Math.round(d.value)) + "秒" +
+        (d.value >= 0 ? "進めたよ" : "戻したよ"));
+    } else if (d.action === "seek_abs") {
+      if (hasYt) localPlayer.seekTo(Math.max(0, d.value), true);
+      else localAudio.currentTime = Math.max(0, d.value);
+      addSys("🎵 " + (d.value <= 0 ? "最初から再生するね" : "指定位置から再生するね"));
+    } else if (d.action === "speed") {
+      const v = Math.min(hasYt ? 2 : 3, Math.max(0.25, d.value));
+      if (hasYt) localPlayer.setPlaybackRate(v);
+      else localAudio.playbackRate = v;
+      addSys(v === 1 ? "▶ 通常速度に戻したよ" : "▶ " + v + "倍速にしたよ" +
+        (hasYt && d.value > 2 ? " (映像プレイヤーは最大2倍)" : ""));
+    } else if (d.action === "volume" || d.action === "volume_set") {
+      // volume: 増減量(±0.2など) / volume_set: 絶対値(0〜1.5、1.0=100%)
+      if (d.action === "volume") localVol = localVol + d.value * 100;
+      else localVol = d.value * 100;
+      localVol = Math.max(0, Math.min(100, Math.round(localVol)));
+      if (hasYt) localPlayer.setVolume(localVol);
+      else localAudio.volume = localVol / 100;
+      addSys("🔊 音量を " + localVol + "% にしたよ");
+    }
+  } catch (e) { addSys("プレイヤー操作に失敗しました", true); }
+}
+
+function closeVideoOverlay() {
+  $("videoOverlay").classList.add("hidden");
+  $("videoFull").src = "";  // 再生停止
+}
+$("videoOverlay").addEventListener("click", (e) => {
+  if (e.target === $("videoOverlay")) closeVideoOverlay();
+});
+$("videoOverlay").addEventListener("dblclick", closeVideoOverlay);
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") closeVideoOverlay();
+});
+
+$("shotOverlay").addEventListener("click", () => $("shotOverlay").classList.add("hidden"));
+$("mindBtn").addEventListener("click", openMind);
+$("mindRefresh").addEventListener("click", async () => {
+  try { renderMind(await window.pywebview.api.get_mind_status()); } catch (e) {}
+});
+$("mindClose").addEventListener("click", () => $("mindOverlay").classList.add("hidden"));
+$("mindOverlay").addEventListener("click", (e) => {
+  if (e.target === $("mindOverlay")) $("mindOverlay").classList.add("hidden");
+});
+
+/* ===== 管理者メニュー: 配線診断 =====
+   「実装がある」と「効いている」は別のこと。
+   ここは合成データを一往復させて、後者だけを見せる（読み取り専用）。 */
+const DIAG_LABEL = {
+  ok: "生きている", off: "止めてある", blocked: "確認不可",
+  disconnected: "読む側が無い", broken: "届いていない", error: "点検失敗",
+};
+const DIAG_ORDER = ["broken", "error", "disconnected", "blocked", "off", "ok"];
+let diagTimer = null;
+let diagQuery = "";
+let diagAttentionOnly = false;
+let latestDiagnostics = null;
+const DIAG_FAVORITES_STORAGE = "neuro_voice.diagnostic_favorites.v1";
+let diagFavoritesOnly = false;
+let diagFavorites = loadDiagnosticFavorites();
+
+function loadDiagnosticFavorites() {
+  try {
+    const value = JSON.parse(window.localStorage.getItem(DIAG_FAVORITES_STORAGE) || "[]");
+    return new Set(Array.isArray(value) ? value.filter((key) => typeof key === "string") : []);
+  } catch (_) {
+    return new Set();
+  }
+}
+
+function toggleDiagnosticFavorite(key) {
+  if (!key) return;
+  if (diagFavorites.has(key)) diagFavorites.delete(key);
+  else diagFavorites.add(key);
+  // 診断キーだけを端末内に保存する。会話・記憶・Trace本文は保存しない。
+  try { window.localStorage.setItem(DIAG_FAVORITES_STORAGE, JSON.stringify([...diagFavorites])); } catch (_) {}
+}
+
+function diagnosticNeedsAttention(item) {
+  return ["broken", "error", "disconnected"].includes(item.status || "ok");
+}
+
+function diagnosticSearchText(item, layer) {
+  // key は画面にも出す。日本語の項目名と技術キーのどちらでも探せる。
+  return [layer, item.key, item.title, item.detail, item.impact, item.flag].join(" ").toLowerCase();
+}
+
+function diagnosticSearchMatches(item, layer, query) {
+  if (!query) return true;
+  const text = diagnosticSearchText(item, layer);
+  // `flag=false` と `flag = false` は同じ確認なので、空白の有無で
+  // 検索漏れを作らない。日本語の説明文は元の空白を保ったまま表示する。
+  return text.includes(query) || text.replace(/\s+/g, "").includes(query.replace(/\s+/g, ""));
+}
+
+function diagnosticItemVisible(item, layer) {
+  const query = diagQuery.trim().toLowerCase();
+  // A typed query is an explicit request.  Do not let a previously selected
+  // "attention only" / favorites filter make an existing setting appear
+  // missing, especially during a smoke test.
+  return (!query || (!diagAttentionOnly || diagnosticNeedsAttention(item))) &&
+    (!query || !diagFavoritesOnly || diagFavorites.has(item.key)) &&
+    diagnosticSearchMatches(item, layer, query);
+}
+
+function visibleDiagnosticItems(layers) {
+  return Object.entries(layers || {}).map(([layer, items]) => [layer, (items || []).filter((item) =>
+    diagnosticItemVisible(item, layer)
+  )]).filter(([, items]) => items.length);
+}
+
+function diagnosticSmokeCheckItems(flags, persona) {
+  // 実機スモークテストで最初に見る値を、一般フラグの長い一覧から分離する。
+  // active_persona_id は切替の正本（設定）であり、記憶本文はここへ出さない。
+  const checks = [
+    "memory.retrieval_enabled",
+    "memory.write_enabled",
+    "turn_integrity.persona_scope_enabled",
+    "turn_integrity.turn_frame_enabled",
+    "cognition.trace.enabled",
+  ].map((key) => ({
+    key, value: (flags[key] || {}).value,
+    title: {
+      "memory.retrieval_enabled": "記憶を思い出す",
+      "memory.write_enabled": "記憶を書き込む",
+      "turn_integrity.persona_scope_enabled": "人格ごとに記憶を分ける",
+      "turn_integrity.turn_frame_enabled": "1ターンを追跡する",
+      "cognition.trace.enabled": "認知トレースを記録する",
+    }[key],
+    detail: {
+      "memory.retrieval_enabled": "必要な場面で、現在のペルソナに属する過去の記憶を検索する。",
+      "memory.write_enabled": "false では検索だけを行い、記憶の保存・強化・検索時の更新を行わない。",
+      "turn_integrity.persona_scope_enabled": "他ペルソナの私的記憶を検索時点で除外する。",
+      "turn_integrity.turn_frame_enabled": "入力から発話までを同じ turn_id で追い、重複の発生層を記録する。",
+      "cognition.trace.enabled": "1ターンごとの診断値を logs/cognitive_trace.jsonl へ記録する。会話本文は残さない。",
+    }[key],
+  }));
+  checks.push({
+    key: "active_persona_id", value: (persona || {}).active_persona_id || "未設定",
+    title: "選択中のペルソナ",
+    detail: "この診断と次の会話で基準にする設定上のペルソナID。切替後は目的のIDか確認する。",
+  });
+  return checks;
+}
+
+function visibleDiagnosticSmokeChecks(checks) {
+  const query = diagQuery.trim().toLowerCase();
+  // 要注意だけ表示中は、正常確認値を混ぜない。通常検索では値（true / b）も対象。
+  if (diagAttentionOnly && !query) return [];
+  return checks.filter((check) => {
+    const value = typeof check.value === "boolean" ? String(check.value) : String(check.value || "未設定");
+    const searchable = {
+      ...check, flag: "", impact: "", value: undefined,
+      // `active_persona_id = b` のように、画面で見える完全な表記でも探せる。
+      detail: check.key + " = " + value + " / " + check.detail,
+    };
+    return (!query || !diagFavoritesOnly || diagFavorites.has(check.key)) &&
+      diagnosticSearchMatches(searchable, "スモークテスト確認", query);
+  });
+}
+
+function diagnosticSmokeChecks(checks) {
+  if (!checks.length) return "";
+  let html = '<div class="diag-layer"><h3>スモークテスト確認<em>現在の設定・active persona</em></h3>';
+  for (const check of checks) {
+    const text = typeof check.value === "boolean" ? String(check.value) : String(check.value || "未設定");
+    const on = check.value === true || (check.key === "active_persona_id" && text !== "未設定");
+    html += diagRow({
+      ...check,
+      status: on ? "ok" : "off",
+      detail: check.detail + " 現在値: " + text,
+    });
+  }
+  return html + "</div>";
+}
+
+function diagRow(item) {
+  const st = item.status || "ok";
+  const bad = st === "broken" || st === "error";
+  const warn = st === "disconnected";
+  const cls = bad ? " bad" : (warn ? " warn" : "");
+  // 壊れている時だけ「何が起きるか」を出す。常時出すと読み飛ばされる。
+  const impact = (bad || warn) && item.impact
+    ? '<div class="diag-impact">→ ' + esc(item.impact) + "</div>" : "";
+  const flag = item.flag ? ' <em style="opacity:.5;font-style:normal">' + esc(item.flag) + "</em>" : "";
+  const favorite = diagFavorites.has(item.key);
+  const favoriteButton = '<button class="diag-favorite' + (favorite ? " active" : "") +
+    '" type="button" data-diag-key="' + escAttr(item.key || "") +
+    '" aria-pressed="' + (favorite ? "true" : "false") + '" title="' +
+    (favorite ? "お気に入りから外す" : "お気に入りに追加") + '">' + (favorite ? "★" : "☆") + "</button>";
+  return '<div class="diag-row' + cls + '">' +
+    '<div class="diag-dot ' + esc(st) + '"></div>' +
+      '<div class="diag-body">' +
+      '<div class="diag-title">' + esc(item.title || item.key) + flag + "</div>" +
+      '<div class="diag-key">' + esc(item.key || "") + "</div>" +
+      '<div class="diag-detail">' + esc(item.detail || "") + "</div>" + impact +
+    "</div>" +
+    '<div class="diag-actions"><div class="diag-ms">' + (item.elapsed_ms != null ? item.elapsed_ms.toFixed(2) + "ms" : "") + "</div>" + favoriteButton + "</div>" +
+  "</div>";
+}
+
+function renderDiagnostics(d) {
+  const body = $("diagBody");
+  if (!d || d.error) {
+    body.innerHTML = '<div class="diag-empty">診断を実行できません<br><small>' +
+      esc((d && d.error) || "不明なエラー") + "</small></div>";
+    return;
+  }
+  latestDiagnostics = d;
+  const counts = d.counts || {};
+  const total = DIAG_ORDER.reduce((a, k) => a + (counts[k] || 0), 0);
+  // 健康度は「壊れていない割合」。止めてあるものは減点しない。
+  const bad = (counts.broken || 0) + (counts.error || 0) + (counts.disconnected || 0);
+  const pct = total ? Math.round(((total - bad) / total) * 100) : 0;
+  const ring = $("diagRing");
+  ring.style.setProperty("--diag-pct", pct + "%");
+  ring.style.setProperty("--diag-ok", bad ? (counts.broken || counts.error ? "#f87171" : "#fbbf24") : "#34d399");
+  $("diagPct").textContent = pct + "%";
+  $("diagStamp").textContent = new Date().toLocaleTimeString("ja-JP") + " 時点 / " +
+    (d.total_ms != null ? d.total_ms.toFixed(1) + "ms" : "");
+
+  let html = '<div class="diag-tally">';
+  for (const k of DIAG_ORDER) {
+    if (!counts[k]) continue;
+    html += '<span class="diag-pill s-' + k + '"><b>' + counts[k] + "</b>" + DIAG_LABEL[k] + "</span>";
+  }
+  html += "</div>";
+
+  const layers = d.layers || {};
+  const visibleLayers = visibleDiagnosticItems(layers);
+  const smokeChecks = diagnosticSmokeCheckItems(d.flags || {}, d.persona || {});
+  const visibleSmokeChecks = visibleDiagnosticSmokeChecks(smokeChecks);
+  const visibleCount = visibleLayers.reduce((total, [, items]) => total + items.length, 0) + visibleSmokeChecks.length;
+  const allCount = Object.values(layers).reduce((total, items) => total + (items || []).length, 0) + smokeChecks.length;
+  html += '<div class="diag-search">' +
+    '<input id="diagSearch" type="search" autocomplete="off" spellcheck="false" ' +
+      'placeholder="項目名・技術キー・説明で検索" value="' + escAttr(diagQuery) + '">' +
+    '<button id="diagAttention" class="diag-flag diag-filter' + (diagAttentionOnly ? " active" : "") +
+      '" type="button" aria-pressed="' + (diagAttentionOnly ? "true" : "false") + '">要注意のみ</button>' +
+    '<button id="diagFavorites" class="diag-flag diag-filter' + (diagFavoritesOnly ? " active" : "") +
+      '" type="button" aria-pressed="' + (diagFavoritesOnly ? "true" : "false") + '">★ お気に入りのみ ' + diagFavorites.size + "</button>" +
+    (diagQuery ? '<button id="diagSearchClear" class="diag-flag diag-filter" type="button">クリア</button>' : "") +
+    '<span class="diag-search-count">' + visibleCount + " / " + allCount + " 件</span></div>";
+
+  // 要注意を最初に。全部緑なら出さない。
+  const attention = d.attention || [];
+  if (attention.length) {
+    html += '<div class="diag-alert"><h4>要注意 ' + attention.length + " 件</h4>";
+    for (const a of attention) {
+      html += '<div class="row"><b>' + esc(a.title) + "</b><br><span>" +
+        esc(a.detail || "") + "</span></div>";
+    }
+    html += "</div>";
+  }
+
+  // 機能フラグ。上位が off で効かないものは色を変える。
+  const flags = d.flags || {};
+  const keys = Object.keys(flags);
+  if (keys.length) {
+    html += '<div class="diag-flags">';
+    for (const key of keys) {
+      const f = flags[key] || {};
+      const on = f.value === true || (typeof f.value === "string" && f.value !== "disabled");
+      const dead = f.ineffective;
+      const cls = dead ? "dead" : (on ? "on" : "");
+      const title = dead ? (f.blocked_by || []).join("／") + " が off なので効きません" : key;
+      html += '<span class="diag-flag ' + cls + '" title="' + esc(title) + '"><i></i>' +
+        esc(f.label || key) +
+        (typeof f.value === "string" ? " : " + esc(f.value) : "") +
+        (dead ? " ⚠" : "") + "</span>";
+    }
+    html += "</div>";
+  }
+  html += diagnosticSmokeChecks(visibleSmokeChecks);
+
+  for (const [layer, items] of visibleLayers) {
+    const ng = items.filter((x) => x.status === "broken" || x.status === "error" || x.status === "disconnected").length;
+    html += '<div class="diag-layer"><h3>' + esc(layer) +
+      "<em>" + items.length + "件" + (ng ? " / 要注意 " + ng : "") + "</em></h3>";
+    items.slice().sort((a, b) => DIAG_ORDER.indexOf(a.status) - DIAG_ORDER.indexOf(b.status))
+         .forEach((x) => { html += diagRow(x); });
+    html += "</div>";
+  }
+  if (!visibleCount) {
+    html += '<div class="diag-empty">' + (diagFavoritesOnly && !diagFavorites.size
+      ? "お気に入りはまだありません。各診断行の ☆ で登録できます。"
+      : "該当する診断項目がありません") + "</div>";
+  }
+
+  // トレースの最新1行。「フラグは上げたが、そもそも通っていない」を見分ける。
+  const t = d.trace || {};
+  if (t.enabled) {
+    html += '<div class="diag-layer"><h3>認知トレース<em>logs/cognitive_trace.jsonl</em></h3>';
+    html += t.found
+      ? '<div class="diag-row"><div class="diag-dot ok"></div><div class="diag-body">' +
+        '<div class="diag-title">直近のターン: ' + esc(t.selected || "?") + " / " + esc(t.status || "?") + "</div>" +
+        '<div class="diag-detail">想起の引き金=' + esc(t.memory_trigger || "なし") +
+        " / 内面 version=" + (t.state_version || 0) +
+        (t.appraisal ? " / 評価=" + esc(t.appraisal) : "") +
+        " / 全 " + (t.lines || 0) + " 行</div></div><div class=\"diag-ms\"></div></div>"
+      : '<div class="diag-row warn"><div class="diag-dot disconnected"></div><div class="diag-body">' +
+        '<div class="diag-title">記録が1行も無い</div><div class="diag-detail">' +
+        '有効にはなっているが、まだ認知層を通ったターンがない</div></div><div class="diag-ms"></div></div>';
+    html += "</div>";
+  }
+  html += migrationPanel(d.migration || {});
+  body.innerHTML = html;
+  bindDiagnosticSearch();
+  bindDiagnosticFavorites();
+  bindMigrationButtons();
+}
+
+function bindDiagnosticSearch() {
+  const input = $("diagSearch");
+  if (input) {
+    input.addEventListener("input", () => {
+      diagQuery = input.value;
+      renderDiagnostics(latestDiagnostics);
+      const next = $("diagSearch");
+      if (next) { next.focus(); next.setSelectionRange(diagQuery.length, diagQuery.length); }
+    });
+  }
+  const attention = $("diagAttention");
+  if (attention) attention.addEventListener("click", () => {
+    diagAttentionOnly = !diagAttentionOnly;
+    renderDiagnostics(latestDiagnostics);
+  });
+  const favorites = $("diagFavorites");
+  if (favorites) favorites.addEventListener("click", () => {
+    diagFavoritesOnly = !diagFavoritesOnly;
+    renderDiagnostics(latestDiagnostics);
+  });
+  const clear = $("diagSearchClear");
+  if (clear) clear.addEventListener("click", () => {
+    diagQuery = "";
+    renderDiagnostics(latestDiagnostics);
+    const next = $("diagSearch");
+    if (next) next.focus();
+  });
+}
+
+function bindDiagnosticFavorites() {
+  document.querySelectorAll(".diag-favorite").forEach((button) => {
+    button.addEventListener("click", () => {
+      toggleDiagnosticFavorite(button.dataset.diagKey || "");
+      renderDiagnostics(latestDiagnostics);
+    });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Identity 移行 (Phase 6F)
+//
+// **新しい管理画面は作らない。** 🩺の中に1区画だけ足す。
+// ボタンを隠すのは親切のためで、**判断はバックエンドがやり直す**。
+// ---------------------------------------------------------------------------
+
+const MIGRATION_LABEL = {
+  disabled: "従来どおり (speaker_id)",
+  shadow_read: "差を測るだけ",
+  dual_write: "両方へ書く",
+  person_primary: "person を正式採用",
+  legacy_rollback: "従来へ戻した",
+};
+const MIGRATION_RISKY = ["dual_write", "person_primary", "legacy_rollback",
+                         "migrate", "resync", "resume"];
+const RESOLUTION_LABEL = {
+  legacy_speaker: "Legacy Speaker",
+  resolved_person: "Resolved Person",
+  unknown: "Unknown",
+  conflicted: "Conflicted",
+  revoked: "Revoked",
+};
+
+function migrationPanel(m) {
+  if (!m || !m.ui_enabled) return "";
+  if (!m.available) {
+    return '<div class="diag-layer"><h3>Identity 移行<em>準備中</em></h3>' +
+      '<div class="diag-row warn"><div class="diag-dot disconnected"></div><div class="diag-body">' +
+      '<div class="diag-title">まだ使えない</div><div class="diag-detail">' +
+      esc(m.error || "Mind が起動していない") + "</div></div><div class=\"diag-ms\"></div></div></div>";
+  }
+  const job = (m.job && m.job.current) || null;
+  const busy = !!(m.job && m.job.busy);
+  const mode = m.mode || "disabled";
+  let html = '<div class="diag-layer" id="migration-panel"><h3>Identity 移行' +
+    "<em>" + esc(MIGRATION_LABEL[mode] || mode) + "</em></h3>";
+
+  html += '<div class="diag-tally">' +
+    migPill("対象話者", m.speakers) +
+    migPill("確認済みLink", m.confirmed_links) +
+    migPill("未解決", m.unresolved, m.unresolved ? "warn" : "") +
+    migPill("競合", m.conflicts, m.conflicts ? "warn" : "") +
+    migPill("差分軸", m.shadow_difference, m.shadow_difference ? "warn" : "") +
+    migPill("部分的失敗", m.partial_failures, m.partial_failures ? "bad" : "") +
+    "</div>";
+
+  const mig = m.migration || {};
+  html += '<div class="diag-row"><div class="diag-dot ' +
+    (m.partial_failures ? "broken" : "ok") + '"></div><div class="diag-body">' +
+    '<div class="diag-title">記録 ' + (mig.records || 0) + " 件" +
+    (mig.can_rollback ? " / 戻せる" : " / 戻す対象なし") + "</div>" +
+    '<div class="diag-detail">最後の移行=' + esc(mig.last_migration_id || "なし") +
+    " / 未完了=" + (mig.unfinished || 0) + "</div></div><div class=\"diag-ms\"></div></div>";
+
+  if (job) {
+    const running = job.status === "running" || job.status === "pending";
+    html += '<div class="diag-row' + (running ? "" : "") + '"><div class="diag-dot ' +
+      (job.status === "failed" ? "broken" : running ? "off" : "ok") + '"></div>' +
+      '<div class="diag-body"><div class="diag-title">ジョブ ' + esc(job.operation) +
+      " — " + esc(job.status) + "</div><div class=\"diag-detail\">" +
+      Math.round((job.progress || 0) * 100) + "% / 成功 " + (job.success || 0) +
+      " / 競合 " + (job.conflicts || 0) + " / 失敗 " + (job.failures || 0) +
+      (job.error ? " / " + esc(job.error) : "") +
+      "</div></div><div class=\"diag-ms\"></div></div>";
+  }
+
+  // 前回落ちた作業。**勝手に再開せず、人に選ばせる。**
+  const stuck = (m.job && m.job.recovered) || null;
+  if (stuck) {
+    html += '<div class="diag-row warn"><div class="diag-dot disconnected"></div>' +
+      '<div class="diag-body"><div class="diag-title">前回の移行が中断された</div>' +
+      '<div class="diag-detail">' + (stuck.processed || 0) + " 件まで処理済み" +
+      (stuck.cursor ? "（" + esc(stuck.cursor) + " まで）" : "") +
+      " / 移行の記録は残っている。同じ続きから再開するか、従来へ戻せる" +
+      "</div></div><div class=\"diag-ms\"></div></div>";
+  }
+
+  const allowed = m.allowed_next || [];
+  html += '<div class="diag-flags" style="margin-top:10px">';
+  if (stuck) {
+    // 中断中は、再開と戻しだけ。**新しい作業は始めさせない。**
+    html += migButton("resume", "中断した移行を再開", busy);
+    html += migButton("legacy_rollback", "従来へ戻す", busy);
+  } else {
+    if (m.dry_run_enabled) html += migButton("dry_run", "DRY RUN", busy);
+    allowed.forEach((next) => {
+      html += migButton(next, (MIGRATION_LABEL[next] || next) + " へ", busy);
+    });
+    html += migButton("migrate", "関係値を移行", busy);
+    if (m.partial_failures) html += migButton("resync", "不一致を再同期", busy);
+  }
+  html += "</div>";
+  if (busy) {
+    html += '<div class="diag-detail" style="padding:4px 2px">' +
+      "実行中は他の操作を受け付けない。会話は止まらない。</div>";
+  }
+
+  const rows = m.speakers_detail || [];
+  if (rows.length) {
+    html += '<div class="diag-detail" style="padding:6px 2px 2px">話者の解決状態</div>';
+    rows.forEach((row) => {
+      const kind = row.resolution || "legacy_speaker";
+      html += '<div class="diag-row"><div class="diag-dot ' +
+        (kind === "resolved_person" ? "ok" : kind === "conflicted" ? "broken" :
+         kind === "revoked" ? "disconnected" : "off") + '"></div>' +
+        '<div class="diag-body"><div class="diag-title">' + esc(row.name || ("話者" + row.speaker_id)) +
+        "</div><div class=\"diag-detail\">" + esc(RESOLUTION_LABEL[kind] || kind) +
+        (row.person_id ? " / " + esc(row.person_id) : "") +
+        "</div></div><div class=\"diag-ms\"></div></div>";
+    });
+  }
+  html += '<div class="diag-detail" style="padding:6px 2px">' +
+    "Local は接続の一覧が無いため、人数は**推定話者数**。確定値ではない。</div>";
+  return html + "</div>";
+}
+
+function migPill(label, value, tone) {
+  return '<span class="diag-pill' + (tone ? " " + tone : "") + '">' +
+    esc(label) + " <b>" + (value || 0) + "</b></span>";
+}
+
+function migButton(op, label, busy) {
+  return '<button class="diag-flag mig-btn" data-op="' + esc(op) + '"' +
+    (busy ? " disabled" : "") + ' style="cursor:pointer">' +
+    "<i></i>" + esc(label) + "</button>";
+}
+
+function bindMigrationButtons() {
+  document.querySelectorAll(".mig-btn").forEach((button) => {
+    button.addEventListener("click", () => runMigration(button.dataset.op, button));
+  });
+}
+
+async function runMigration(operation, button) {
+  if (!apiReady || !operation) return;
+  // **二重送信で2つ目のジョブを作らない。** 押した瞬間に無効化する。
+  if (button) button.disabled = true;
+  try {
+    let result = await window.pywebview.api.run_migration_operation(operation, false);
+    if (result && result.reason === "needs_confirmation") {
+      const c = result.confirm || {};
+      const ok = window.confirm(
+        "この操作を実行しますか？\n\n" +
+        "現在: " + (MIGRATION_LABEL[c.from] || c.from) + "\n" +
+        "変更後: " + (MIGRATION_LABEL[c.to] || c.to) + "\n" +
+        "対象: " + (c.targets || 0) + " 件\n" +
+        "競合: " + (c.conflicts || 0) + " 件\n" +
+        "部分的失敗: " + (c.partial_failures || 0) + " 件\n\n" +
+        "戻し方: 「" + (MIGRATION_LABEL[c.how_to_undo] || c.how_to_undo) + "」を選ぶ\n" +
+        "（person 側のデータは消えません）");
+      if (!ok) { if (button) button.disabled = false; return; }
+      result = await window.pywebview.api.run_migration_operation(operation, true);
+    }
+    if (result && result.ok === false && result.reason !== "needs_confirmation") {
+      const blockers = (result.blockers || []).join(" / ");
+      window.alert("実行できません: " + (result.reason || "不明") +
+                   (blockers ? "\n" + blockers : ""));
+    }
+  } catch (e) {
+    window.alert("移行操作でエラー: " + ((e && (e.message || e.toString())) || "不明"));
+  }
+  refreshDiagnostics();
+}
+
+async function refreshDiagnostics() {
+  if (!apiReady) return;
+  try {
+    renderDiagnostics(await window.pywebview.api.get_diagnostics());
+  } catch (e) {
+    renderDiagnostics({ error: (e && (e.message || e.toString())) || "不明なエラー" });
+  }
+}
+
+function openDiagnostics() {
+  if (!apiReady) return;
+  $("diagOverlay").classList.remove("hidden");
+  $("diagBody").innerHTML = '<div class="diag-empty">点検中...</div>';
+  refreshDiagnostics();
+  // 開いている間だけ回す。閉じたら止める——見ていない画面のために
+  // 毎秒プローブを走らせる意味がない。
+  if (diagTimer) clearInterval(diagTimer);
+  diagTimer = setInterval(refreshDiagnostics, 3000);
+}
+
+function closeDiagnostics() {
+  $("diagOverlay").classList.add("hidden");
+  if (diagTimer) { clearInterval(diagTimer); diagTimer = null; }
+}
+
+$("diagBtn").addEventListener("click", openDiagnostics);
+$("diagRefresh").addEventListener("click", refreshDiagnostics);
+$("diagClose").addEventListener("click", closeDiagnostics);
+$("diagOverlay").addEventListener("click", (e) => {
+  if (e.target === $("diagOverlay")) closeDiagnostics();
+});
+
+
+/* ===== Discord ===== */
+let dcConnected = false;
+
+function setDiscordUI(connected, channel) {
+  dcConnected = connected;
+  const st = $("dcState"), btn = $("dcConnBtn");
+  if (!st) return;
+  st.textContent = connected
+    ? (channel ? "接続中 🎧 " + channel : "接続中 (VC待機 — !join で参加)")
+    : "未接続";
+  st.style.color = connected ? "var(--green)" : "";
+  btn.textContent = connected ? "切断" : "接続";
+  btn.className = "btn " + (connected ? "ghost" : "primary");
+  btn.style.padding = "8px 20px";
+  if (connected && !channel) loadDcChannels();  // ログイン完了時にVC一覧を取得
+}
+
+function discordPayload() {
+  return {
+    token: $("dcToken").value.trim(),
+    receive_mode: $("dcReceiveMode").value,
+    respond_all: $("dcRespondAll").checked,
+    wake_words: $("dcWake").value,
+    follow_up_s: parseFloat($("dcFollowUp").value) || 0,
+    echo_text: $("dcEcho").checked,
+    known_voices_only: $("dcKnownOnly").checked,
+    greet_on_join: $("dcGreetOnJoin").checked,
+    screen_share_enabled: $("dcScreenShareEnabled").checked,
+    screen_share_obs_source: $("dcScreenShareSource").value.trim(),
+  };
+}
+
+async function loadDcChannels() {
+  if (!apiReady) return;
+  try {
+    const r = await window.pywebview.api.discord_channels();
+    const sel = $("dcVcSel");
+    const opts = ['<option value="">自動 (人がいるVCへ参加)</option>'];
+    (r.channels || []).forEach((c) => {
+      opts.push('<option value="' + escAttr(c.id) + '">' + esc(c.name) +
+        " (" + c.members + "人)</option>");
+    });
+    sel.innerHTML = opts.join("");
+  } catch (e) { /* 未接続時は無視 */ }
+}
+
+function setDcQuickUI(connected, channel) {
+  const btn = $("dcQuickBtn");
+  const inVc = connected && channel;
+  btn.className = "ctl " + (inVc ? "on" : "off");
+  btn.title = inVc
+    ? "Discord VC「" + channel + "」から退出"
+    : (connected ? "Discord VCに参加 (前回のVC→人がいるVCの順)" :
+       "Discordに接続してVCへ参加");
+}
+
+$("dcQuickBtn").addEventListener("click", async () => {
+  if (!apiReady) return;
+  const btn = $("dcQuickBtn");
+  btn.disabled = true;
+  try {
+    const r = await window.pywebview.api.discord_quick();
+    if (!r.ok && r.message) addSys(r.message, true);
+    else if (r.message) addSys(r.message);
+  } catch (e) {
+    addSys("Discord操作に失敗しました", true);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+$("dcVcRefresh").addEventListener("click", loadDcChannels);
+$("dcJoinBtn").addEventListener("click", async () => {
+  if (!apiReady) return;
+  const btn = $("dcJoinBtn");
+  btn.disabled = true;
+  try {
+    const r = await window.pywebview.api.discord_join($("dcVcSel").value || "");
+    if (!r.ok) addSys(r.message || "VC参加に失敗しました", true);
+  } catch (e) {
+    addSys("VC参加に失敗しました", true);
+  } finally {
+    btn.disabled = false;
+  }
+});
+$("dcLeaveBtn").addEventListener("click", async () => {
+  if (!apiReady) return;
+  try {
+    const r = await window.pywebview.api.discord_leave_vc();
+    if (!r.ok && r.message) addSys(r.message, true);
+  } catch (e) {}
+});
+$("dcInviteBtn").addEventListener("click", async () => {
+  if (!apiReady) return;
+  const btn = $("dcInviteBtn");
+  btn.disabled = true;
+  try {
+    // 入力中のトークンを先に保存 (貼り替え直後でも正しいIDで招待できる)
+    if ($("dcToken").value.trim()) {
+      const sr = await window.pywebview.api.set_discord_settings(discordPayload());
+      if (sr && sr.token_saved) $("dcToken").value = "";
+    }
+    const r = await window.pywebview.api.discord_invite();
+    if (r.ok) {
+      addSys("ブラウザで招待ページを開きました。サーバーを選んで「認証」してください 🎧");
+    } else {
+      addSys(r.message || "招待リンクを作成できませんでした", true);
+    }
+  } catch (e) {
+    addSys("招待リンクの作成に失敗しました", true);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+/* ===== 通話の聞き取り方法 (ループバック取り込み) ===== */
+let dcOutputsLoaded = false;
+async function loadOutputDevices() {
+  if (!apiReady) return;
+  try {
+    const r = await window.pywebview.api.list_audio_devices();
+    const sel = $("dcLoopbackDev");
+    const cur = sel.value;
+    const opts = ['<option value="">既定の出力 (Discordの再生先)</option>'];
+    (r.outputs || []).forEach((d) => {
+      const suffix = d.loopback_available ? "" : " ⚠ ループバック取得不可";
+      const recommend = /elgato|sound capture/i.test(d.name || "") ? " ★推奨" : "";
+      opts.push('<option value="' + escAttr(d.id) + '">' + esc(d.name) + recommend + suffix + "</option>");
+    });
+    sel.innerHTML = opts.join("");
+    sel.value = cur;
+    const fill = (id, rows, current, empty) => {
+      const node = $(id);
+      const options = ['<option value="">' + empty + "</option>"];
+      (rows || []).forEach((d) => options.push('<option value="' + escAttr(d.id) + '">' + esc(d.name) + "</option>"));
+      node.innerHTML = options.join("");
+      node.value = current || "";
+    };
+    fill("dcMicDev", r.physical_microphones, $("dcMicDev").value, "既定の本人マイク");
+    fill("dcMonitorDev", r.playback_outputs, $("dcMonitorDev").value, "既定のモニター出力");
+    fill("dcAiOutputDev", r.playback_outputs, $("dcAiOutputDev").value, "既定のAI音声出力");
+    const picked = (r.outputs || []).find((d) => d.id === sel.value);
+    $("dcLoopbackStatus").textContent = picked
+      ? (picked.loopback_available
+          ? "✓ endpoint ID で対応付けた loopback microphone を利用できます"
+          : "⚠ このデバイスはループバック取得不可です。Elgato Sound Capture等を選んでください")
+      : "出力一覧とループバック可能一覧は endpoint ID で照合しています。";
+    const capable = (r.loopback_outputs || []).map((d) => d.name).join(" / ");
+    $("dcLoopbackAvailable").textContent = capable
+      ? "ループバック取得可能: " + capable
+      : "ループバック取得可能な出力は見つかりません。";
+    dcOutputsLoaded = true;
+    if (!r.ok && r.message) addSys("出力デバイス取得に失敗: " + r.message, true);
+  } catch (e) {}
+}
+function updateLoopbackRow() {
+  const mode = $("dcInputMode").value;
+  const show = mode === "loopback" || mode === "mix";
+  $("dcLoopbackRow").style.display = show ? "block" : "none";
+  if (show && !dcOutputsLoaded) loadOutputDevices();
+}
+async function loadAudioInputSettings() {
+  if (!apiReady) return;
+  try {
+    const s = await window.pywebview.api.get_audio_input_settings();
+    $("dcInputMode").value = s.mode || "mic";
+    $("dcLoopbackMute").checked = s.mute_on_speak === true;
+    updateLoopbackRow();
+    if (!dcOutputsLoaded) await loadOutputDevices();
+    $("dcLoopbackDev").value = s.discord_capture_device || s.loopback_device || "";
+    $("dcMicDev").value = s.microphone_device || "";
+    $("dcMonitorDev").value = s.monitor_output_device || "";
+    $("dcAiOutputDev").value = s.ai_output_device || "";
+  } catch (e) {}
+}
+$("dcInputMode").addEventListener("change", updateLoopbackRow);
+$("dcReceiveMode").addEventListener("change", () => {
+  $("dcReceiveStatus").textContent = $("dcReceiveMode").value === "direct_dave"
+    ? "次回のVC参加からDAVE直接受信を使います。"
+    : "次回のVC参加からWindowsループバックを使います。";
+});
+$("dcLoopbackRefresh").addEventListener("click", () => { dcOutputsLoaded = false; loadOutputDevices(); });
+$("dcLoopbackDev").addEventListener("change", () => { loadOutputDevices(); });
+$("dcInputSave").addEventListener("click", async () => {
+  if (!apiReady) return;
+  const btn = $("dcInputSave");
+  btn.disabled = true;
+  try {
+    const r = await window.pywebview.api.set_audio_input_settings({
+      mode: $("dcInputMode").value,
+      loopback_device: $("dcLoopbackDev").value || "",
+      discord_capture_device: $("dcLoopbackDev").value || "",
+      microphone_device: $("dcMicDev").value || "",
+      monitor_output_device: $("dcMonitorDev").value || "",
+      ai_output_device: $("dcAiOutputDev").value || "",
+      mute_on_speak: $("dcLoopbackMute").checked,
+    });
+    addSys(r.ok ? (r.message || "保存しました。再起動で反映されます")
+                : (r.message || "保存に失敗しました"), !r.ok);
+  } catch (e) {
+    addSys("保存に失敗しました", true);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+$("audioRedetect").addEventListener("click", async () => {
+  if (!apiReady) return;
+  const btn = $("audioRedetect");
+  const status = $("audioRedetectStatus");
+  btn.disabled = true;
+  status.style.color = "";
+  status.textContent = "探しています…";
+  try {
+    const r = await window.pywebview.api.redetect_audio_devices();
+    const message = r.message || (r.ok ? "認識しました" : "認識できませんでした");
+    status.textContent = (r.ok ? "✓ " : "⚠ ") + message
+      + (r.speaker ? `／スピーカー: ${r.speaker}` : "");
+    status.style.color = r.ok
+      ? (r.used_fallback ? "var(--pink)" : "var(--green)")
+      : "var(--red)";
+    addSys(message, !r.ok);
+    // The lists these selects were built from are now stale.
+    if (r.ok) loadOutputDevices();
+  } catch (e) {
+    status.textContent = "⚠ 再認識に失敗しました";
+    status.style.color = "var(--red)";
+    addSys("マイクの再認識に失敗しました", true);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+$("dcEye").addEventListener("click", () => {
+  const inp = $("dcToken");
+  inp.type = inp.type === "password" ? "text" : "password";
+});
+$("dcConnBtn").addEventListener("click", async () => {
+  if (!apiReady) return;
+  const btn = $("dcConnBtn");
+  btn.disabled = true;
+  try {
+    if (dcConnected) {
+      await window.pywebview.api.discord_disconnect();
+      setDiscordUI(false, "");
+    } else {
+      // 入力中の設定を保存してから接続
+      const sr = await window.pywebview.api.set_discord_settings(discordPayload());
+      if (sr && sr.token_saved) $("dcToken").value = "";
+      const r = await window.pywebview.api.discord_connect();
+      if (!r.ok) addSys(r.message || "Discord接続に失敗しました", true);
+    }
+  } catch (e) {
+    addSys("Discord操作に失敗しました", true);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+/* ===== 設定パネル ===== */
+let settingsCache = null;
+
+function addSttCorrectionRow(row = {}) {
+  const el = document.createElement("div");
+  el.className = "correction-row";
+  el.innerHTML =
+    '<input type="text" class="stt-correction-wrong" maxlength="80" placeholder="例: おすい" value="' + escAttr(row.wrong || "") + '">' +
+    '<span class="correction-arrow">→</span>' +
+    '<input type="text" class="stt-correction-right" maxlength="80" placeholder="例: おみず" value="' + escAttr(row.right || "") + '">' +
+    '<button type="button" class="correction-remove" title="この行を削除">×</button>';
+  el.querySelector(".correction-remove").addEventListener("click", () => el.remove());
+  $("sttCorrectionsList").appendChild(el);
+}
+
+function renderSttCorrections(rows) {
+  const list = $("sttCorrectionsList");
+  list.innerHTML = "";
+  (rows || []).forEach(addSttCorrectionRow);
+  if (!list.children.length) addSttCorrectionRow();
+}
+
+async function openSttCorrections() {
+  if (!apiReady) return;
+  try {
+    const result = await window.pywebview.api.get_stt_corrections();
+    renderSttCorrections((result && result.corrections) || []);
+    $("overlay").classList.add("hidden");
+    $("sttCorrectionsOverlay").classList.remove("hidden");
+  } catch (e) {
+    addSys("誤変換辞書の取得に失敗しました", true);
+  }
+}
+
+function closeSttCorrections() {
+  $("sttCorrectionsOverlay").classList.add("hidden");
+  $("overlay").classList.remove("hidden");
+}
+
+async function saveSttCorrections() {
+  const rows = [...document.querySelectorAll("#sttCorrectionsList .correction-row")].map((el) => ({
+    wrong: el.querySelector(".stt-correction-wrong").value.trim(),
+    right: el.querySelector(".stt-correction-right").value.trim(),
+  }));
+  try {
+    const result = await window.pywebview.api.set_stt_corrections(rows);
+    if (!result || !result.ok) {
+      addSys((result && result.message) || "誤変換辞書の保存に失敗しました", true);
+      return;
+    }
+    renderSttCorrections(result.corrections || []);
+    addSys("誤変換辞書を保存しました。STTを再読込しています。");
+    closeSttCorrections();
+  } catch (e) {
+    addSys("誤変換辞書の保存に失敗しました", true);
+  }
+}
+
+function addTtsPronunciationRow(row = {}) {
+  const el = document.createElement("div");
+  el.className = "correction-row";
+  el.innerHTML =
+    '<input type="text" class="tts-pron-surface" maxlength="80" placeholder="例: そんな風" value="' + escAttr(row.surface || "") + '">' +
+    '<span class="correction-arrow">→</span>' +
+    '<input type="text" class="tts-pron-reading" maxlength="80" placeholder="例: そんなふう" value="' + escAttr(row.reading || "") + '">' +
+    '<button type="button" class="correction-remove" title="この行を削除">×</button>';
+  el.querySelector(".correction-remove").addEventListener("click", () => el.remove());
+  $("ttsPronunciationsList").appendChild(el);
+}
+
+async function openTtsPronunciations() {
+  if (!apiReady) return;
+  try {
+    const result = await window.pywebview.api.get_tts_pronunciations();
+    const list = $("ttsPronunciationsList"); list.innerHTML = "";
+    (result.pronunciations || []).forEach(addTtsPronunciationRow);
+    if (!list.children.length) addTtsPronunciationRow();
+    $("overlay").classList.add("hidden"); $("ttsPronunciationsOverlay").classList.remove("hidden");
+  } catch (e) { addSys("読み方辞書の取得に失敗しました", true); }
+}
+
+function closeTtsPronunciations() {
+  $("ttsPronunciationsOverlay").classList.add("hidden"); $("overlay").classList.remove("hidden");
+}
+
+async function saveTtsPronunciations() {
+  const rows = [...document.querySelectorAll("#ttsPronunciationsList .correction-row")].map((el) => ({
+    surface: el.querySelector(".tts-pron-surface").value.trim(),
+    reading: el.querySelector(".tts-pron-reading").value.trim(),
+  }));
+  try {
+    const result = await window.pywebview.api.set_tts_pronunciations(rows);
+    if (!result.ok) { addSys(result.message || "読み方辞書の保存に失敗しました", true); return; }
+    addSys("読み方辞書を保存しました。次の発話から反映されます。"); closeTtsPronunciations();
+  } catch (e) { addSys("読み方辞書の保存に失敗しました", true); }
+}
+
+async function refreshOllamaModels() {
+  if (!apiReady || !settingsCache || !settingsCache.ollama_models_loading) return;
+  try {
+    const result = await window.pywebview.api.get_ollama_models();
+    settingsCache.ollama_models = (result && result.models) || [];
+  } catch (e) {
+    settingsCache.ollama_models = [];
+  }
+  settingsCache.ollama_models_loading = false;
+  if ($("setBackend").value === "ollama") fillModelSuggestions("ollama");
+}
+
+function fillModelSuggestions(backendName) {
+  const s = settingsCache;
+  if (!s) return;
+  let opts = [];
+  if (backendName === "ollama") opts = s.ollama_models || [];
+  else if (backendName === "cerebras") opts = s.cerebras_models || [];
+  const current = (s.models && s.models[backendName]) || "";
+  // 候補+現在値を1つのドロップダウンに。「直接入力…」選択時のみ入力欄を出す
+  const items = opts.slice();
+  if (current && !items.includes(current)) items.unshift(current);
+  const sel = $("setModelSelect");
+  const inp = $("setModel");
+  sel.innerHTML = items
+    .map((o) => '<option value="' + escAttr(o) + '"' + (o === current ? " selected" : "") + ">" + esc(o) + "</option>")
+    .join("") + '<option value="__custom__">✏ モデル名を直接入力…</option>';
+  if (items.length === 0) {
+    // 候補なし (Ollama未起動など) → 最初から入力欄を表示
+    sel.value = "__custom__";
+    inp.style.display = "";
+    inp.value = current;
+    inp.placeholder = backendName === "ollama"
+      ? (s.ollama_models_loading
+        ? "モデル一覧を取得中。モデル名を直接入力できます"
+        : "Ollama未起動。モデル名を直接入力")
+      : "モデル名を入力 (例: qwen3-vl:8b)";
+  } else {
+    inp.style.display = "none";
+    inp.value = "";
+  }
+}
+
+function switchTab(name) {
+  document.querySelectorAll(".tab").forEach((t) =>
+    t.classList.toggle("active", t.dataset.tab === name));
+  ["llm", "features", "persona", "discord", "apikeys"].forEach((n) =>
+    $("tab-" + n).classList.toggle("hidden", n !== name));
+  if (name === "discord") loadAudioInputSettings();
+}
+
+let personaData = null;  // get_persona の結果 (presets 全体)
+
+function renderPersonaPreset(name) {
+  const preset = (personaData && personaData.presets && personaData.presets[name]) || {};
+  const wrap = $("personaFields");
+  const fields = (preset.fields || []).map((f) =>
+    '<div class="field"><label>' + esc(f.label) + "</label>" +
+    '<input type="text" data-pkey="' + escAttr(f.key) + '" value="' + escAttr(f.value) +
+    '" placeholder="' + escAttr(f.placeholder) + '"></div>').join("");
+  const traits = preset.conversation_traits || {};
+  const traitLabels = (personaData && personaData.conversation_trait_labels) || [];
+  const traitControls = traitLabels.length ?
+    '<div class="field persona-traits"><label>会話の特性</label>' +
+    '<small>返答の内容ではなく、好奇心・冗談・意見の出し方などを調整します。経験からも少しずつ変化します。</small>' +
+    traitLabels.map((trait) => {
+      const value = Math.round(Number(traits[trait.key] ?? 0.5) * 100);
+      return '<div class="trait-row"><span>' + esc(trait.label) + '</span>' +
+        '<input type="range" min="0" max="100" step="1" data-ptrait="' + escAttr(trait.key) +
+        '" value="' + value + '"><output data-ptrait-value="' + escAttr(trait.key) + '">' + value + '</output></div>';
+    }).join("") + '</div>' : "";
+  wrap.innerHTML = fields + traitControls;
+  wrap.querySelectorAll("[data-ptrait]").forEach((input) => {
+    input.addEventListener("input", () => {
+      const output = wrap.querySelector('[data-ptrait-value="' + input.dataset.ptrait + '"]');
+      if (output) output.textContent = input.value;
+    });
+  });
+  $("setSysPrompt").value = preset.system_prompt || "";
+}
+
+function fillPersona(p) {
+  personaData = p || {};
+  const names = Object.keys(personaData.presets || {});
+  const active = personaData.active || names[0] || "";
+  $("personaSel").innerHTML = names.map((n) => {
+    const label = (personaData.presets[n] || {}).label || n;
+    return '<option value="' + escAttr(n) + '"' + (n === active ? " selected" : "") + ">" +
+      esc(label) + " (" + esc(n) + ")" + (n === active ? " — 使用中" : "") + "</option>";
+  }).join("");
+  renderPersonaPreset(active);
+  $("personaPreview").textContent = personaData.composed || "";
+}
+
+function fillApiKeys(list) {
+  const wrap = $("apiKeyFields");
+  wrap.innerHTML = (list || []).map((k) =>
+    '<div class="field"><label>' + esc(k.label) + " <b>" + esc(k.env) + "</b></label>" +
+    '<div class="key-row">' +
+    '<input type="password" data-env="' + escAttr(k.env) + '" value="' + escAttr(k.value) +
+    '" placeholder="未設定" autocomplete="off" spellcheck="false">' +
+    '<button type="button" class="key-eye" title="表示/非表示">👁</button>' +
+    "</div></div>").join("");
+  wrap.querySelectorAll(".key-eye").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const inp = btn.parentElement.querySelector("input");
+      inp.type = inp.type === "password" ? "text" : "password";
+    });
+  });
+}
+
+async function loadMusicRecognitionOutputs(current) {
+  const sel = $("setMusicRecognitionDevice");
+  if (!sel || !apiReady) return;
+  try {
+    const result = await window.pywebview.api.list_audio_devices();
+    const options = ['<option value="">Windows既定の出力</option>'];
+    (result.loopback_outputs || []).forEach((device) => {
+      options.push('<option value="' + escAttr(device.id) + '">' + esc(device.name) + '</option>');
+    });
+    sel.innerHTML = options.join("");
+    sel.value = current || "";
+    if (current && sel.value !== current) {
+      const option = document.createElement("option");
+      option.value = current;
+      option.textContent = "保存済みデバイス（現在利用不可）";
+      option.selected = true;
+      sel.appendChild(option);
+    }
+  } catch (e) {
+    sel.innerHTML = '<option value="">Windows既定の出力（一覧取得失敗）</option>';
+  }
+}
+
+async function openSettings() {
+  if (!apiReady) return;
+  try {
+    settingsCache = await window.pywebview.api.get_settings();
+  } catch (e) { return; }
+  const s = settingsCache;
+  $("setBackend").innerHTML = (s.backends || []).map((b) =>
+    '<option value="' + esc(b) + '"' + (b === s.backend ? " selected" : "") + ">" + esc(b) + "</option>").join("");
+  fillModelSuggestions(s.backend);
+  $("setTemp").value = s.temperature;
+  $("tempVal").textContent = s.temperature;
+  $("setMaxTokens").value = s.max_tokens;
+  $("setMaxTurns").value = s.max_turns;
+  $("setAutoLoad").checked = !!s.auto_load;
+  $("setVision").value = s.vision_enabled ? (s.vision_mode || "on_demand") : "off";
+  const vp = s.vision_provider || "local";
+  document.querySelectorAll('input[name="visionProvider"]').forEach((el) => {
+    el.checked = el.value === vp;
+  });
+  $("setInterval").value = s.vision_interval || 20;
+  $("setVisionModel").value = s.vision_model || "gemma4-12b-qat";
+  $("setVideoEnabled").checked = !!s.video_enabled;
+  $("setVideoInput").value = s.video_input || "obs";
+  $("setVideoSource").value = s.video_source || "0";
+  $("setObsHost").value = s.video_obs_host || "127.0.0.1";
+  $("setObsPort").value = s.video_obs_port || 4455;
+  $("setObsPassword").value = "";
+  $("setObsPassword").placeholder = s.video_obs_password_set
+    ? "設定済み（空欄なら維持）" : "OBS WebSocketのパスワード";
+  const obsSource = s.video_obs_source || "";
+  $("setObsSource").innerHTML = '<option value="">ソース一覧を取得してください</option>';
+  if (obsSource) {
+    const option = document.createElement("option");
+    option.value = obsSource;
+    option.textContent = obsSource + "（保存済み）";
+    option.selected = true;
+    $("setObsSource").appendChild(option);
+  }
+  void refreshCaptureWindows(s.video_window_handle || "");
+  const gameProfileSelect = $("setGameProfile");
+  gameProfileSelect.innerHTML = '<option value="">通常の映像・会話</option>';
+  (s.video_game_profiles || []).forEach((profile) => {
+    const option = document.createElement("option");
+    option.value = profile.id;
+    option.textContent = profile.label;
+    option.title = profile.assistant_role || "";
+    gameProfileSelect.appendChild(option);
+  });
+  gameProfileSelect.value = s.video_game_profile || "";
+  $("setGameCommentary").checked = !!s.video_game_commentary;
+  $("setGameKnowledge").checked = s.video_game_knowledge !== false;
+  $("setVideoInterval").value = s.video_analysis_interval || 2;
+  $("setVideoFrames").value = s.video_max_frames || 4;
+  $("setAudioInput").value = s.audio_input_backend || "whisper";
+  $("setAudioOutput").value = s.audio_output_backend || "voicevox";
+  $("setSearch").checked = !!s.search_enabled;
+  $("setAutonomousResearch").checked = !!s.autonomous_research_enabled;
+  $("setAutonomousResearchMode").value = s.autonomous_research_mode || "LOW_RISK_AUTO";
+  $("setMusicRecognition").checked = !!s.music_recognition_enabled;
+  await loadMusicRecognitionOutputs(s.music_recognition_loopback_device || "");
+  $("setHummingRecognition").checked = !!s.humming_recognition_enabled;
+  $("setHummingHost").value = s.humming_recognition_host || "";
+  $("setEmotion").checked = !!s.emotion_enabled;
+  $("setConversationVariant").value = s.conversation_variant || "enhanced";
+  $("setConversationFeatureMode").value = s.conversation_feature_mode || "normal";
+  $("setConversationDeveloper").checked = !!s.conversation_developer_ui;
+  $("setConversationForce").value = s.conversation_force_feature || "";
+  document.querySelectorAll("[data-conv-feature]").forEach((el) => {
+    el.checked = (s.conversation_feature_toggles || {})[el.dataset.convFeature] !== false;
+  });
+  $("setSttBeam").value = String(s.stt_beam_size || 5);
+  $("setProactive").checked = !!s.proactive_enabled;
+  $("setProMin").value = s.proactive_min || 30;
+  $("setProMax").value = s.proactive_max || 90;
+  fillPersona(s.persona || {});
+  void refreshBackupList();
+  fillApiKeys(s.api_keys || []);
+  const dc = s.discord || {};
+  $("dcToken").value = "";
+  $("dcToken").placeholder = dc.token_set ? "設定済み (変更する場合のみ入力)" : "未設定";
+  $("dcRespondAll").checked = !!dc.respond_all;
+  $("dcWake").value = dc.wake_words || "";
+  $("dcFollowUp").value = (dc.follow_up_s != null ? dc.follow_up_s : 30);
+  $("dcEcho").checked = !!dc.echo_text;
+  $("dcKnownOnly").checked = dc.known_voices_only === true;
+  $("dcGreetOnJoin").checked = dc.greet_on_join !== false;
+  $("dcScreenShareEnabled").checked = dc.screen_share_enabled !== false;
+  $("dcScreenShareSource").value = dc.screen_share_obs_source || "Discord画面共有";
+  $("dcReceiveMode").value = dc.receive_mode || "loopback";
+  $("dcReceiveStatus").textContent = $("dcReceiveMode").value !== "loopback"
+    ? "DAVEで復号した音声をDiscordアカウント別に受信します。声紋は別途推定され、アカウント名へ自動関連付けされません。"
+    : "ループバック受信を使用します。音声は混ざるため、アカウント別の受信はできません。";
+  const members = dc.members || [];
+  $("dcMemberStatus").textContent = "参加者 " + members.length + "人" +
+    (members.length ? ": " + members.map((m) => m.name).join(", ") : "");
+  setDiscordUI(!!dc.connected, dc.channel || "");
+  if (dc.connected) loadDcChannels();
+  updateIntervalVisibility();
+  updateVideoSourceVisibility();
+  updateProactiveVisibility();
+  $("overlay").classList.remove("hidden");
+  if (s.backend === "ollama") void refreshOllamaModels();
+}
+
+function updateProactiveVisibility() {
+  $("proactiveIntervals").style.display = $("setProactive").checked ? "" : "none";
+}
+
+function updateIntervalVisibility() {
+  $("intervalField").style.visibility =
+    $("setVision").value === "auto" ? "visible" : "hidden";
+}
+
+function updateVideoSourceVisibility() {
+  const kind = $("setVideoInput").value;
+  $("obsVideoSettings").style.display = kind === "obs" ? "" : "none";
+  $("legacyVideoSettings").style.display = kind === "obs" ? "none" : "";
+}
+
+async function refreshObsSources(selectedName = "") {
+  if (!apiReady) return;
+  const select = $("setObsSource");
+  const status = $("obsStatus");
+  const previous = selectedName || select.value || "";
+  status.textContent = "OBSへ接続しています...";
+  try {
+    const result = await window.pywebview.api.list_obs_sources(
+      $("setObsHost").value.trim(),
+      parseInt($("setObsPort").value, 10) || 4455,
+      $("setObsPassword").value,
+    );
+    if (!result || !result.ok) {
+      status.textContent = (result && result.message) || "OBSへ接続できませんでした";
+      addSys("OBS接続不可: " + status.textContent, true);
+      return;
+    }
+    select.innerHTML = '<option value="">OBSソースを選択してください</option>';
+    (result.sources || []).forEach((item) => {
+      const option = document.createElement("option");
+      option.value = item.name || "";
+      option.textContent = (item.recommended ? "★ " : "") + (item.name || "(名称なし)") +
+        (item.kind ? " — " + item.kind : "");
+      if (option.value === previous) option.selected = true;
+      select.appendChild(option);
+    });
+    status.textContent = "接続成功: OBS " + (result.obs_version || "") +
+      " / ★はゲーム取得向けソースです";
+  } catch (e) {
+    status.textContent = "OBSソース一覧の取得に失敗しました";
+    addSys(status.textContent, true);
+  }
+}
+
+async function refreshCaptureWindows(selectedHandle = "") {
+  if (!apiReady) return;
+  const select = $("setVideoWindow");
+  if (!select) return;
+  const previous = selectedHandle || select.value || "";
+  try {
+    const result = await window.pywebview.api.list_capture_windows();
+    const windows = Array.isArray(result) ? result : (result.windows || []);
+    select.innerHTML = '<option value="">ウィンドウを選択してください</option>';
+    (windows || []).forEach((item) => {
+      const option = document.createElement("option");
+      option.value = String(item.handle || "");
+      option.textContent = item.title || "(無題のウィンドウ)";
+      option.disabled = item.capture_ready === false;
+      if (option.value === String(previous)) option.selected = true;
+      select.appendChild(option);
+    });
+    // Do not resurrect a destroyed/hidden HWND in the picker. The video
+    // service intentionally shows the desktop until a capturable game window
+    // appears, then selects that new HWND automatically.
+    if (false && previous && !select.value) {
+      const option = document.createElement("option");
+      option.value = String(previous);
+      option.textContent = "以前選択したウィンドウ（見つかりません）";
+      option.selected = true;
+      select.appendChild(option);
+    }
+    if (!windows.length && result && result.error) {
+      addSys("ゲームウィンドウ一覧の取得に失敗: " + result.error, true);
+    }
+  } catch (e) {
+    addSys("ゲームウィンドウ一覧を取得できませんでした", true);
+  }
+}
+
+$("settingsBtn").addEventListener("click", openSettings);
+$("cognitionTestBtn").addEventListener("click", async () => {
+  if (!apiReady) return;
+  const btn = $("cognitionTestBtn"); btn.disabled = true;
+  try {
+    const current = btn.textContent.includes("PROD") ? "production_session" :
+      btn.textContent.includes("TEST") ? "test_session" : "disabled";
+    const next = current === "disabled" ? "test_session" :
+      current === "test_session" ? "production_session" : "disabled";
+    const result = await window.pywebview.api.set_cognition_session(next);
+    if (!result || !result.ok) { addSys((result && result.message) || "認知テストセッションの切替に失敗しました", true); return; }
+    setCognitionTestUI(result);
+    btn.classList.toggle("active", !!result.effective_cognition_enabled);
+    addSys(result.message || "認知テストセッションを切替ました");
+  } finally { btn.disabled = false; }
+});
+$("visionTestBtn").addEventListener("click", async () => {
+  if (!apiReady) return;
+  const btn = $("visionTestBtn"); btn.disabled = true;
+  try {
+    const r = await window.pywebview.api.test_vision_connection();
+    addSys(r.ok ? "Gemma/Ollama: " + (r.message || "接続確認済み") : "Gemma/Ollama接続不可: " + (r.message || "モデル名を確認"), !r.ok);
+  } catch (e) { addSys("Gemma/Ollama接続テストに失敗", true); }
+  finally { btn.disabled = false; }
+});
+$("cameraPreviewBtn").addEventListener("click", async () => {
+  if (!apiReady) return;
+  const r = await window.pywebview.api.video_preview(
+    $("setVideoInput").value, $("setVideoSource").value, "", $("setVideoWindow").value,
+    $("setObsHost").value.trim(), parseInt($("setObsPort").value, 10) || 4455,
+    $("setObsPassword").value, $("setObsSource").value,
+  );
+  if (!r.ok) { addSys("入力プレビューに失敗: " + (r.message || ""), true); return; }
+  $("cameraPreview").src = "data:image/jpeg;base64," + r.image;
+  $("cameraPreview").classList.remove("hidden");
+});
+$("sttBtn").addEventListener("click", async () => {
+  if (!apiReady) return;
+  const r = await window.pywebview.api.toggle_stt();
+  if (r && !r.ok && r.message) addSys(r.message, true);
+});
+$("setVision").addEventListener("change", updateIntervalVisibility);
+$("setVideoInput").addEventListener("change", () => {
+  if ($("setVideoInput").value === "window") void refreshCaptureWindows();
+  updateVideoSourceVisibility();
+});
+$("refreshObsSources").addEventListener("click", () => void refreshObsSources());
+$("testObsCapture").addEventListener("click", async () => {
+  if (!apiReady) return;
+  const status = $("obsStatus");
+  status.textContent = "最新フレームを取得しています...";
+  const result = await window.pywebview.api.test_obs_connection(
+    $("setObsHost").value.trim(), parseInt($("setObsPort").value, 10) || 4455,
+    $("setObsPassword").value, $("setObsSource").value,
+  );
+  if (!result || !result.ok) {
+    status.textContent = (result && result.message) || "OBSフレームを取得できませんでした";
+    addSys("OBS映像テスト失敗: " + status.textContent, true);
+    return;
+  }
+  status.textContent = (result.message || "OBS映像を取得しました") +
+    " / " + (result.latency_ms || 0) + "ms";
+  if (result.image) {
+    $("cameraPreview").src = "data:image/jpeg;base64," + result.image;
+    $("cameraPreview").classList.remove("hidden");
+  }
+});
+$("refreshVideoWindows").addEventListener("click", () => void refreshCaptureWindows());
+$("setVideoWindow").addEventListener("change", async () => {
+  const handle = $("setVideoWindow").value;
+  if (!apiReady || !handle) return;
+  const applied = await window.pywebview.api.set_video_capture_window(handle);
+  if (applied && !applied.ok) addSys("ゲームウィンドウ入力を開始できませんでした: " + (applied.message || ""), true);
+});
+$("captureForegroundWindow").addEventListener("click", async () => {
+  if (!apiReady) return;
+  addSys("3秒以内にMinecraftを前面へ切り替えてください");
+  const result = await window.pywebview.api.select_foreground_capture_window(3);
+  if (!result || !result.ok || !result.window) {
+    addSys("前面のMinecraftを取得できませんでした: " + ((result || {}).message || ""), true);
+    return;
+  }
+  const select = $("setVideoWindow");
+  const item = result.window;
+  let option = Array.from(select.options).find((candidate) => candidate.value === String(item.handle));
+  if (!option) {
+    option = document.createElement("option");
+    option.value = String(item.handle);
+    option.textContent = item.title || "選択した前面ウィンドウ";
+    select.appendChild(option);
+  }
+  option.selected = true;
+  $("setVideoInput").value = "window";
+  const applied = await window.pywebview.api.set_video_capture_window(item.handle);
+  if (!applied || !applied.ok) {
+    addSys("ゲームウィンドウ入力を開始できませんでした: " + ((applied || {}).message || ""), true);
+    return;
+  }
+  addSys("前面のゲームウィンドウを選択しました: " + option.textContent);
+});
+$("setProactive").addEventListener("change", updateProactiveVisibility);
+$("sttCorrectionsLink").addEventListener("click", openSttCorrections);
+$("sttCorrectionAdd").addEventListener("click", () => addSttCorrectionRow());
+$("sttCorrectionsBack").addEventListener("click", closeSttCorrections);
+$("sttCorrectionsSave").addEventListener("click", saveSttCorrections);
+$("sttCorrectionsOverlay").addEventListener("click", (e) => {
+  if (e.target === $("sttCorrectionsOverlay")) closeSttCorrections();
+});
+$("ttsPronunciationsLink").addEventListener("click", openTtsPronunciations);
+$("ttsPronunciationAdd").addEventListener("click", () => addTtsPronunciationRow());
+$("ttsPronunciationsBack").addEventListener("click", closeTtsPronunciations);
+$("ttsPronunciationsSave").addEventListener("click", saveTtsPronunciations);
+$("ttsPronunciationsOverlay").addEventListener("click", (e) => {
+  if (e.target === $("ttsPronunciationsOverlay")) closeTtsPronunciations();
+});
+$("personaSel").addEventListener("change", (e) => renderPersonaPreset(e.target.value));
+
+$("personaAdd").addEventListener("click", async () => {
+  const key = ($("personaNewKey").value || "").trim().toLowerCase();
+  const name = ($("personaNewName").value || "").trim();
+  const btn = $("personaAdd");
+  btn.disabled = true;
+  try {
+    const r = await window.pywebview.api.create_persona({ key: key, name: name });
+    addSys(r && r.message ? r.message : "追加しました", !(r && r.ok));
+    if (r && r.ok) {
+      // 追加したものを選択状態にする。**切り替えはしない**——
+      // 内容を書いてから「適用」を押すまで、使用中の人格は変わらない。
+      fillPersona(r.persona || {});
+      $("personaSel").value = r.key;
+      renderPersonaPreset(r.key);
+      $("personaNewKey").value = "";
+      $("personaNewName").value = "";
+    }
+  } catch (e) {
+    addSys("追加に失敗しました: " + e, true);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+$("personaDelete").addEventListener("click", async () => {
+  const key = $("personaSel").value;
+  if (!key) return;
+  // **一度だけ確認する。** 記憶は消さないが、設定は書き換わる。
+  if (!confirm("ペルソナ「" + key + "」を一覧から削除しますか?\n記憶などのファイルは残ります。")) return;
+  const btn = $("personaDelete");
+  btn.disabled = true;
+  try {
+    const r = await window.pywebview.api.delete_persona({ key: key });
+    addSys(r && r.message ? r.message : "削除しました", !(r && r.ok));
+    if (r && r.ok) {
+      if ((r.remaining_files || []).length) {
+        addSys("残したファイル: " + r.remaining_files.join(", "));
+      }
+      fillPersona(r.persona || {});
+    }
+  } catch (e) {
+    addSys("削除に失敗しました: " + e, true);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+// ---- 人格データのバックアップ ----
+const BACKUP_REASONS = { auto: "自動", manual: "手動", exit: "終了時", pre_restore: "復元前退避" };
+async function refreshBackupList() {
+  try {
+    const r = await window.pywebview.api.list_backups();
+    const box = $("backupList");
+    if (!r.ok) { box.innerHTML = '<span class="hint">' + esc(r.message || "取得できません") + "</span>"; return; }
+    if (!r.backups.length) { box.innerHTML = '<span class="hint">バックアップはまだありません</span>'; return; }
+    box.innerHTML = r.backups.map((b) =>
+      '<div style="display:flex; align-items:center; gap:10px;">' +
+      '<span style="flex:1;">' + esc(b.time) + ' <span class="hint">(' +
+      esc(BACKUP_REASONS[b.reason] || b.reason) + ' / ' + b.size_kb + 'KB)</span></span>' +
+      '<button type="button" class="btn" style="padding:2px 12px; font-size:11px;" ' +
+      'data-restore="' + esc(b.name) + '">復元</button></div>').join("");
+    box.querySelectorAll("[data-restore]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        if (!confirm("このバックアップへ復元しますか?\n現在の状態は自動退避されますが、反映にはアプリの再起動が必要です。")) return;
+        const res = await window.pywebview.api.restore_backup(btn.dataset.restore);
+        $("backupMsg").textContent = res.message || (res.ok ? "復元しました" : "復元に失敗しました");
+        void refreshBackupList();
+      });
+    });
+  } catch (e) { /* pywebview未接続時は無視 */ }
+}
+$("backupNowBtn").addEventListener("click", async () => {
+  $("backupMsg").textContent = "作成中…";
+  try {
+    const r = await window.pywebview.api.create_backup();
+    $("backupMsg").textContent = r.message || (r.ok ? "保存しました" : "失敗しました");
+  } catch (e) { $("backupMsg").textContent = "失敗しました"; }
+  void refreshBackupList();
+});
+$("orbWrap").addEventListener("click", (e) => {
+  e.stopPropagation();
+  $("emoPop").classList.toggle("hidden");
+});
+document.addEventListener("click", (e) => {
+  const pop = $("emoPop");
+  if (!pop.classList.contains("hidden") && !pop.contains(e.target)) {
+    pop.classList.add("hidden");
+  }
+});
+document.querySelectorAll(".tab").forEach((t) =>
+  t.addEventListener("click", () => switchTab(t.dataset.tab)));
+$("visionBtn").addEventListener("click", async () => {
+  if (!apiReady) return;
+  const on = await window.pywebview.api.toggle_vision();
+  setVisionUI(on);
+});
+$("searchBtn").addEventListener("click", async () => {
+  if (!apiReady) return;
+  const on = await window.pywebview.api.toggle_search();
+  setSearchUI(on);
+});
+$("proactiveBtn").addEventListener("click", async () => {
+  if (!apiReady) return;
+  const on = await window.pywebview.api.toggle_proactive();
+  setProactiveUI(on);
+});
+$("setBackend").addEventListener("change", (e) => {
+  fillModelSuggestions(e.target.value);
+  if (e.target.value === "ollama") void refreshOllamaModels();
+});
+$("setModelSelect").addEventListener("change", (e) => {
+  const custom = e.target.value === "__custom__";
+  $("setModel").style.display = custom ? "" : "none";
+  if (custom) $("setModel").focus();
+});
+$("setTemp").addEventListener("input", (e) => { $("tempVal").textContent = e.target.value; });
+$("setCancel").addEventListener("click", () => $("overlay").classList.add("hidden"));
+$("overlay").addEventListener("click", (e) => {
+  if (e.target === $("overlay")) $("overlay").classList.add("hidden");
+});
+$("setApply").addEventListener("click", async () => {
+  const visionSel = $("setVision").value;
+  const modelSel = $("setModelSelect").value;
+  const payload = {
+    backend: $("setBackend").value,
+    model: (modelSel === "__custom__" ? $("setModel").value : modelSel).trim(),
+    temperature: parseFloat($("setTemp").value),
+    max_tokens: parseInt($("setMaxTokens").value, 10),
+    max_turns: parseInt($("setMaxTurns").value, 10),
+    vision_enabled: visionSel !== "off",
+    vision_mode: visionSel === "off" ? "on_demand" : visionSel,
+    vision_interval: parseInt($("setInterval").value, 10) || 20,
+    vision_provider: (document.querySelector('input[name="visionProvider"]:checked') || {}).value || "local",
+    vision_model: $("setVisionModel").value.trim(),
+    video_enabled: $("setVideoEnabled").checked,
+    video_input: $("setVideoInput").value,
+    video_source: $("setVideoSource").value.trim(),
+    video_screen_monitor: "auto",
+    video_window_handle: $("setVideoWindow").value,
+    video_obs_host: $("setObsHost").value.trim(),
+    video_obs_port: parseInt($("setObsPort").value, 10) || 4455,
+    video_obs_password: $("setObsPassword").value,
+    video_obs_source: $("setObsSource").value,
+    video_game_profile: $("setGameProfile").value,
+    video_game_commentary: $("setGameCommentary").checked,
+    video_game_knowledge: $("setGameKnowledge").checked,
+    video_analysis_interval: parseFloat($("setVideoInterval").value) || 2,
+    video_max_frames: parseInt($("setVideoFrames").value, 10) || 4,
+    audio_input_backend: $("setAudioInput").value,
+    audio_output_backend: $("setAudioOutput").value,
+    auto_load: $("setAutoLoad").checked,
+    search_enabled: $("setSearch").checked,
+    autonomous_research_enabled: $("setAutonomousResearch").checked,
+    autonomous_research_mode: $("setAutonomousResearchMode").value,
+    music_recognition_enabled: $("setMusicRecognition").checked,
+    music_recognition_loopback_device: $("setMusicRecognitionDevice").value,
+    humming_recognition_enabled: $("setHummingRecognition").checked,
+    humming_recognition_host: $("setHummingHost").value.trim(),
+    emotion_enabled: $("setEmotion").checked,
+    stt_beam_size: parseInt($("setSttBeam").value, 10) || 5,
+    proactive_enabled: $("setProactive").checked,
+    proactive_min: parseInt($("setProMin").value, 10) || 30,
+    proactive_max: parseInt($("setProMax").value, 10) || 90,
+    conversation_variant: $("setConversationVariant").value,
+    conversation_feature_mode: $("setConversationFeatureMode").value,
+    conversation_developer_ui: $("setConversationDeveloper").checked,
+    conversation_force_feature: $("setConversationForce").value,
+    conversation_feature_toggles: Object.fromEntries(
+      [...document.querySelectorAll("[data-conv-feature]")].map((el) => [el.dataset.convFeature, el.checked])
+    ),
+  };
+  // ペルソナ設定 (選択中プリセットの切替+編集)
+  const personaFields = {};
+  document.querySelectorAll("#personaFields input[data-pkey]").forEach((el) => {
+    personaFields[el.dataset.pkey] = el.value;
+  });
+  const personaTraits = {};
+  document.querySelectorAll("#personaFields input[data-ptrait]").forEach((el) => {
+    personaTraits[el.dataset.ptrait] = Number(el.value) / 100;
+  });
+  const personaPayload = {
+    active: $("personaSel").value,
+    fields: personaFields,
+    conversation_traits: personaTraits,
+    system_prompt: $("setSysPrompt").value,
+  };
+  // APIキー (空欄は変更なし扱い)
+  const apiKeys = {};
+  document.querySelectorAll("#apiKeyFields input").forEach((el) => {
+    apiKeys[el.dataset.env] = el.value;
+  });
+  try {
+    await window.pywebview.api.set_api_keys(apiKeys);
+    const dr = await window.pywebview.api.set_discord_settings(discordPayload());
+    if (dr && dr.token_saved) $("dcToken").value = "";
+    const r = await window.pywebview.api.apply_settings(payload);
+    if (!r.ok) { addSys(r.message, true); return; }
+    const pr = await window.pywebview.api.apply_persona(personaPayload);
+    if (!pr.ok) { addSys(pr.message, true); return; }
+    $("overlay").classList.add("hidden");
+  } catch (e) {
+    addSys("設定の適用に失敗しました", true);
+  }
+});
+</script>
+</body>
+</html>

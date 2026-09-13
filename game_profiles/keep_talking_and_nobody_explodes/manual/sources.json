@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "manual_version": "1-ja",
+  "verification_code": "122",
+  "sources": [
+    {
+      "kind": "official_web",
+      "url": "https://www.bombmanual.com/ja/web/index.html",
+      "language": "ja",
+      "authority": "official"
+    },
+    {
+      "kind": "official_pdf",
+      "url": "https://www.bombmanual.com/ja/print/KeepTalkingAndNobodyExplodes-BombDefusalManual-v1-ja.pdf",
+      "language": "ja",
+      "authority": "official"
+    }
+  ],
+  "note": "公式マニュアル本文そのものは複製せず、版と検証コードを固定して参照する。ゲーム中の判断は実装済みローカル規則または利用者が明示的に取り込んだ公式マニュアルだけを使う。",
+  "implemented_modules": [
+    "wires", "button", "simon", "memory", "morse",
+    "complicated_wires", "wire_sequences", "password"
+  ],
+  "solver_ready_needs_table": {
+    "keypad": "manual/tables/keypad.json",
+    "whos_on_first": "manual/tables/whos_on_first.json",
+    "maze": "manual/tables/maze.json"
+  },
+  "not_implemented": {
+    "needy": "換気・コンデンサ・つまみは未着手"
+  },
+  "implementation_note": "規則は neuro_voice/games/ktane/modules.py にコードとして持つ。判断はコードが行い、モデルは確定した答えを言うだけ（憲法第2条）。キーパッド・心理戦・迷路は解法まで実装済みだが、表が大きく記憶で書くと静かに誤るので manual/tables/*.json から読む。空なら推測せず『まだ取り込んでいない』と言う。埋め方は docs/KTANE_TABLES.md。**AIに記憶で埋めさせないこと。**"
+}

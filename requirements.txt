@@ -1,0 +1,37 @@
+# ⚠ 先に PyTorch (CUDA 12.8 / RTX 5070 Ti 対応) を入れること:
+#   pip install torch --index-url https://download.pytorch.org/whl/cu128
+numpy
+sounddevice
+soundcard        # Discord通話のループバック取り込み(聞き取り)。WASAPIループバック対応
+soundfile
+PyYAML
+python-dotenv
+openai>=1.40
+httpx>=0.27              # Ollama REST multimodal streaming
+silero-vad>=5.1
+faster-whisper>=1.1
+# 音声認識の同音異義語補正で、漢字→読みの変換に使う (任意)。
+# 無くても動作するが、漢字語の自動補正だけが効かなくなる。
+pykakasi>=2.2
+qwen-tts
+requests
+pywebview>=5.0
+mss
+dxcam[winrt]>=0.3.0          # Desktop/monitor capture fallback
+windows-capture>=2.0.0      # HWND-targeted Windows Graphics Capture for games
+Pillow
+opencv-python             # Webカメラ・動画ファイルのフレーム取得 (映像認識を使う場合)
+ddgs
+sentence-transformers>=3.0
+onnxruntime
+opensmile>=2.5
+speechbrain>=1.0
+# 接続安定にはDiscord音声ゲートウェイv8(seq)対応の2.7系が必要 (2.6.4は即切断→VC出入りループ)
+discord.py[voice]==2.7.1
+discord-ext-voice-recv
+websockets>=14,<16
+yt-dlp           # VCで音楽再生 (YouTube検索)。別途FFmpegのインストールが必要
+
+# 遠隔ランチャーのタスクトレイ常駐 (任意)
+pystray>=0.19
+pillow>=10.0

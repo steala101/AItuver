@@ -1,0 +1,1602 @@
+# =============================================
+# Neuro Voice AI 設定ファイル
+# API キーは .env に書き、${VAR} で参照する
+# =============================================
+
+app:
+  name: "Neuro Voice AI"
+
+logging:
+  level: INFO
+  dir: logs
+
+audio:
+  input_device: null      # null=既定デバイス。`python run.py --list-devices` で確認
+  output_device: null
+  # Audio roles are intentionally separate.  Discord's own output route must
+  # be selected in the Discord client; this app captures that endpoint only.
+  discord_capture_device: "{0.0.0.00000000}.{8690ea0e-1b97-44eb-865f-e1f099b9f94c}"  # soundcard speaker endpoint ID used for Discord loopback
+  monitor_output_device: 9   # preferred human monitoring endpoint (informational)
+  ai_output_device: 9        # output endpoint for the AI's local VOICEVOX playback
+  # 起動後にヘッドセットの電源を入れた場合など、あとから現れたデバイスを拾う間隔。
+  # PortAudioはデバイス一覧を起動時にキャッシュするため、定期的に取り直す必要がある。
+  # 0 以下にすると監視を止める（従来どおり起動時のデバイスに固定）。
+  device_watch_interval_s: 3.0
+  sample_rate: 16000
+  frame_samples: 512      # Silero VAD は 16kHz / 512サンプル固定
+  # Discord通話の聞き取り方法 (DiscordBridgeが使用。DAVE E2EEでBot直接受信が不可のため)
+  #   mic     = ループバック未使用 (Discordでは相手の声を聞けない)
+  #   loopback= PC出力(Discord通話)をWASAPIループバックで取り込む (相手の声のみ)
+  #   mix     = 本人マイク + 通話ループバック (配信者本人+相手 両方をニューロが聞く)
+  # ローカル会話(Discord未接続時)は常にマイク。反映はニューロ再起動時。
+  input_mode: mix
+  loopback_device: "{0.0.0.00000000}.{8690ea0e-1b97-44eb-865f-e1f099b9f94c}"   # loopback/mix時の出力デバイス。null=既定出力(Discordの再生先に合わせる)
+  # false: dedicated Discord capture (e.g. Elgato) + separate AI output (e.g. Razer).
+  # true: only when AI audio itself is routed into the capture endpoint.
+  loopback_mute_on_speak: false
+  loopback_mute_tail_s: 1.2     # 発話終了後もこの秒数ミュートを保つ (Discord再生遅延の尻尾対策)
+
+vad:
+  threshold: 0.5              # 発話開始判定の確率しきい値
+  end_threshold: 0.35         # 発話終了判定のしきい値
+  start_frames: 3             # 開始判定に必要な連続フレーム数 (3 ≈ 96ms)
+  start_frames_barge_in: 8    # AI発話中の割り込み判定 (エコー誤検知対策で長め)
+  end_silence_ms: 400         # この長さ無音が続いたら発話終了
+  min_speech_ms: 220          # 「ポチ」など短い呼びかけもSTTへ渡す。短すぎるノイズだけは引き続き無視
+  pre_roll_ms: 640            # 発話開始前に遡って含める長さ。
+                              # 「えーと」「うん」から話し始める人はここに丸ごと入るので、
+                              # 短いと語頭のフィラーごと失われる
+  trim_silence: true          # VAD後、Whisperへ渡す発話の前後無音を削る（認識精度・速度を改善）
+  onset_threshold: 0.20       # pre_roll内で「ここから声がある」とみなすしきい値。
+                              # threshold(0.5)より低くしないと、小さな「うん」が無音扱いで捨てられる
+  keep_leading_ms: 160        # 最初に音が出た位置より、さらに手前に残す長さ（子音の立ち上がり用）
+  keep_trailing_ms: 80        # 語尾を欠かさないために残す末尾側の無音
+
+realtime:
+  # 記憶想起が間に合わないと「昨日の話を覚えていない」状態になるため、
+  # 予算は想起が確実に終わる上限にする (想起自体は通常50〜150msで終わる。
+  # この値は保険のキャップであり、毎回この時間待つわけではない)。
+  context_deadline_ms: 1200      # Maximum wait before starting the LLM with fast context
+  speaker_context_wait_ms: 120   # Speaker ID budget; continue in background after this
+  memory_recall_budget_ms: 900   # ローカル会話で想起に使う最大時間。超えたら想起なしで即応答
+
+# 疑似フルデュプレックス (Discord)。falseで従来動作へ完全に戻る
+full_duplex:
+  enabled: true
+  soft_interrupt_timeout_ms: 1500   # pause後この時間で判定未確定なら再生を自動再開 (取り残し防止)
+  keyword_interrupt_enabled: true   # 「待って/ストップ」等をSTT途中結果で即時ハード割り込み
+  extra_interrupt_words: []         # 追加の即断割り込み語 (STTの表記どおり。漢字可)
+  echo_guard:                       # スピーカー回り込み (AI自身の声) の音響ガード
+    enabled: true
+    reference_buffer_s: 6.0         # 送信TTSの参照バッファ長 (秒)
+    similarity_threshold: 0.78      # 包絡相関がこの値以上なら回り込みとして破棄
+    max_chars: 8                    # この文字数以下の短い発話だけエコー判定する(長い割り込みは飲まない)
+  endpoint:                         # 発話終了判定 (フェーズ6)
+    enabled: true
+    thinking_extra_ms: 400          # 「〜けど」「〜で」等で終わる途中結果 → 終了判定を延長 (小さいほど応答が速い)
+    final_reduce_ms: 250            # 「〜です」「〜?」等の文末表現 → 終了判定を短縮 (大きいほど応答が速い)
+  control_layer:                    # 会話制御層 (フェーズ7・ルールベース)
+    enabled: true
+    listener_backchannel: false     # 既定は沈黙。途中理解を装う相槌より正確なターン確定を優先
+    listener_cooldown_s: 8          # 相づちの最短間隔 (秒)
+    thinking_filler: false          # 繋ぎ発話(テンプレ「えっと」等)は廃止。常に無効(違和感のため)
+    filler_cooldown_s: 20           # (未使用) thinking_filler廃止に伴い無効
+    contextual_backchannel: false   # partial STTごとのLLM相槌は禁止。必要時もルールベースの最小相槌のみ
+    contextual_min_chars: 12        # この文字数以上ユーザーが話した時だけLLM相づちを検討 (短文では黙る)
+    contextual_cooldown_s: 18       # (listener_cooldown_sで間隔管理。予備)
+
+barge_in:
+  enabled: true               # AI発話中の実質的な割り込みだけ再生を中断
+  acknowledgement_max_chars: 12  # これ以下の既知の短い相槌は中断しない
+
+aizuchi:
+  enabled: true               # ユーザーの発話が終わった後、応答の先頭に短い相槌を付ける
+  response_leadin_probability: 0.38  # 毎回は付けない。話を聞いた時だけ自然に反応する確率
+
+conversation_audio:
+  # Barge-in はVAD開始時に即時無音化する。下の旧duck設定は互換用。
+  resume_fade_ms: 80          # 相槌・誤検知なら停止位置から短くフェードインして再開
+  duck_gain: 0.18             # 旧設定（他経路の互換用）
+  duck_fade_ms: 250           # 旧設定（他経路の互換用）
+  restore_fade_ms: 180        # 旧設定（他経路の互換用）
+  interrupt_fade_ms: 0        # 実質的な割り込み時も待機せず破棄する
+
+stt:
+  backend: faster_whisper
+  model: large-v3-turbo       # GPU(cuda)時のモデル。日英対応・低遅延
+  cpu_model: small            # device:cpu 時に使う軽量モデル。large系はCPUで激遅なので推奨。
+                              # 速度優先: base / tiny、精度優先: medium (3950Xでも実用)。null=modelと同じ
+  device: cuda                # cpuにするとVRAM節約(cpu_model=small)。GPUなら速い。フェーズ1のVRAM削減でGPU常駐に余裕
+  compute_type: int8_float16  # GPU時: int8_float16 が精度ほぼ同等でVRAM約半分・高速 (推奨)。float16も可。cpu時はint8固定
+  partial_beam_size: 1        # 途中認識(割り込み語検出)のbeam。1で高速
+  final_beam_size: 5          # 確定認識のbeam。候補を5本比較するため2より正確だが少し遅い。beam_size(下)より優先
+  cpu_threads: 12             # device: cpu 時の使用スレッド数 (3950X=16コア)
+  language: ja                # ja固定で言語判定パスを省略 (CPUでは特に効く)。null=自動判定
+  interim: true               # 発話途中の暫定認識を表示 (GPU負荷は増える)
+  interim_interval_ms: 1200
+  download_root: models
+  # beam size = 1語ごとに同時に保持して比較する「認識候補の数」。
+  # 1=最速だが誤変換が増えやすい / 5=精度と速度の推奨バランス / 8以上=精度寄りで遅くなる。
+  beam_size: 10                # 1〜10で変更可能。固有名詞・同音語の誤認識を減らしたい場合は上げる
+  # Whisperは initial_prompt の文体を真似る。整った文だけを書くと「えーと」「うん」
+  # などのフィラーを勝手に整形して落とすため、例文にもフィラーを含めておく。
+  initial_prompt: "日本語の自然な会話です。えーと、あのー、うーんといった言いよどみも、そのまま書き起こします。"
+  keep_fillers: true          # 「うん」「えーと」等の言いよどみを残す。
+                              # falseにするとWhisper既定の整形が効き、綺麗だが人間味は減る
+  hotwords: "" # 固定語は挿入誤認識を起こすため空。現在のペルソナ名・話者名だけをターンごとに短く渡す
+  corrections:
+    "おすい": "おみず"
+  wake_word_aliases:          # 呼びかけとして単独/区切り直後に出た場合だけ補正 (文中の一般語は変えない)
+    ポチ: [ポッチ, おち]
+  # 同音異義語の誤変換対策。認識結果を「確定した文字」ではなく「仮説」として扱う。
+  # 1) 会話の話題・固有名詞・記憶を毎ターン initial_prompt/hotwords へ流し込み、
+  #    Whisperの認識自体を今の文脈へ寄せる (追加コストほぼゼロ)
+  # 2) 語ごとの確信度が低く、かつ読みが文脈語と完全一致する語だけ黙って直す
+  # 3) 残った不確かな語をLLMへ伝え、漢字の意味でなく読みで捉え直させる
+  # 復号ループ(吃音)対策。temperature を 0.0 固定にすると Whisper 自身の
+  # 再試行フォールバックが無効になり「最初は、最初は、最初は」が出る。
+  temperature_fallback: true    # 壊れたセグメントだけ 0.0→0.2→0.4 で再試行する
+  repetition_penalty: 1.0       # 1.0=無効(推奨)。日本語は正当な反復が多く、
+                                # 上げると語の置換(誤認識)を誘発する
+  no_repeat_ngram_size: 0       # 0=無効。同上の理由で通常は触らない
+  transcript_repair:
+    enabled: true
+    word_confidence: true          # word-level probability を取得 (認識が少し遅くなる)
+                                   # 認識が遅いと感じたら false。文脈補正は効いたまま
+    word_confidence_threshold: 0.60  # この確信度未満の語を「聴き取りが怪しい」とみなす
+    utterance_logprob_threshold: -0.70  # 発話全体がこれ未満なら判定を厳しめにする
+    auto_repair: true              # 読みが文脈語と完全一致する場合だけ自動置換
+    collapse_stutter: true         # 「最初は、最初は、最初は」のような復号ループを畳む
+    max_context_terms: 24          # 読み一致の補正だけに使う語数 (認識には影響しない)
+    # ↓ ここから下だけが Whisper の認識自体に影響する。慎重に。
+    # 認識へ渡すのは「名前」「今のゲーム名」など検証済みの固有名詞のみ。
+    # 会話履歴から拾った語は渡さない (前回の誤認識が次を誤らせる自己強化ループになる)。
+    max_bias_terms: 4              # hotwordsへ載せる上限。多いとWhisperがその語を挿入し始める
+    bias_via_initial_prompt: false # trueにするとinitial_promptへも載せるが、
+                                   # Whisperがプロンプト文をそのまま出力へ漏らすことがある
+    ask_when_unresolvable: true    # どう読み替えても意図が取れない時だけ短く聞き返す
+
+llm:
+  backend: ollama           # cerebras / openai / openrouter / ollama
+  auto_load: true           # 起動時にローカルLLM (Ollama) をVRAMへ事前ロードする
+  keep_alive: 10m           # OllamaのVRAM保持時間。Gemma 4の再ロード待ちを減らす
+  timeout_sec: 60
+  # QAT GGUFのllama-serverがWindowsで異常終了した時だけ、設定を変えずに
+  # このモデルへランタイムで一時フォールバックする。空欄ならフォールバックしない。
+  ollama_fallback_model: gemma4-12B-it-Q6:latest
+  auto_fallback_on_runner_crash: true
+  # 会話用コンテキスト長。
+  # ※ここだけ上げても効かない。OLLAMA_CONTEXT_LENGTH も同じ値にすること
+  #   (SetupOllamaEnv.bat を実行し直す)。サーバ側の上限で頭打ちになる。
+  #
+  # 【2026-08-01 8192→16384】実ログで毎ターン最大24件の履歴が捨てられていた:
+  #   「文脈長のため古い会話を24件除外 (見積8651tok / 予算6912tok / ctx=8192)」
+  # systemブロックだけで5000〜6000tokあるため、8192では会話に1000tok強しか
+  # 残らなかった。少し前の話を覚えていない直接の原因。
+  #
+  # 上げる前にVRAMを実測した (tools/check_context_length.py):
+  #   num_ctx= 8192: 7,599MB / VRAM 7,599MB — 全部GPU
+  #   num_ctx=16384: 7,615MB / VRAM 7,615MB — 全部GPU（+16MBのみ）
+  # 倍にしてもほとんど増えないのは、KVキャッシュが q8_0 で量子化され
+  # Flash Attention が有効だから。SetupOllamaEnv.bat のその2行を消すと前提が崩れる。
+  # 載りきらなくなるとOllamaは層をCPUへ追い出し、応答が数倍遅くなる。
+  # 構成を変えたら、上げる前にもう一度 check_context_length.py で測ること。
+  num_ctx: 16384
+  # 出力のばらつき。**「同じ入力に同じ返答」に直接効く唯一のつまみ。**
+  #
+  # 2026-08-01時点の実測: 台本8文を4回流して冒頭ハッシュが毎回同じだった。
+  # Planner(738tok)を外しても、常時ONを3642→2899tokにしても、履歴が違っても
+  # 動かなかった。一方で裸のプロンプトなら同じ入力3回が3種類に割れる
+  # (tools/check_sampling.py)。つまりサンプリングは壊れておらず、
+  # **巨大なプロンプトが分布を尖らせている**。
+  #
+  # 0.7 は分布を「さらに尖らせる」向きの値で、根拠なく置かれたまま
+  # 一度も検証されていなかった。Gemma 4 自身の推奨は 1.0。
+  # 変える前に tools/check_opening_diversity.py で測ること。
+  # ばらつきと的確さは引き換えなので、数字だけで決めない。
+  temperature: 0.7
+  # ↓ サンプリングのつまみ（下段の cognition とは別物）
+  # 残りのサンプリングのつまみ。**未設定なら送らない**（モデル自身の推奨値が
+  # 使われる。Gemma 4 は top_k 64 / top_p 0.95）。温度だけ動かして様子を見たい
+  # 時に、他が固定されていないと切り分けができないので、既定では空にしておく。
+  # top_p:
+  # top_k:
+  # min_p:
+  # 1ターンの応答の上限。音声会話では1024で日本語約1000字≒2分半の発話にあたる。
+  # num_ctx とは別物で、num_ctx を上げてもここは変わらない
+  # (実際の上限は min(max_tokens, num_ctx - プロンプト) になる)。
+  max_tokens: 1024           # 思考型モデルは512だと推論で使い切り本文が空になりがち
+  # 文脈長は「送る分」と「返す分」で共有される。履歴を往復数だけで打ち切ると、
+  # TRPGのような長文ターンでは num_ctx を埋め尽くし、応答が数文字で
+  # finish_reason=length になる（＝文の途中で切れる）。
+  # 送信前にトークン量で見積もり、この分だけ出力枠を必ず空ける。
+  # auto = max_tokens + 余裕。max_tokens を変えると自動で追従するので、
+  # 通常は auto のままにしておくこと（固定値だと上げ忘れて再び切れる）。
+  context_reserve_tokens: auto
+  # プロンプトの内訳と「前回から変わっていない先頭部分」をログへ出す。
+  # 初回トークンの遅さがプロンプト評価によるものかを確かめるための計測で、
+  # 送る内容は一切変えない。原因が判明したら false にしてよい。
+  profile_prompt: true
+  # 履歴を切り詰める時、予算ちょうどではなく少し余裕を持って切る。
+  #
+  # 【現在は 0 = 無効】実測すると、systemブロックだけで5000〜6000トークンあり
+  # プロンプトが一度も予算に収まらないため、余裕を持たせても毎ターン切り直しに
+  # なる。むしろ予算が下がったぶん履歴を余計に捨てるだけだった（除外件数が
+  # 11→13→15→17→19→21と増え続け、再利用率は28〜32%のまま）。
+  # systemブロックが小さくなって「収まるターン」が出るようになったら意味を持つ。
+  #
+  # 【2026-08-01 前提が変わった】num_ctx を 16384 へ上げたので、予算は約15000tok。
+  # 実測のプロンプトは7000〜8600tokなので、**今度は収まる**。この設定が意味を持つ
+  # 条件は満たされた。ただし収まっている限り切り詰め自体が起きないので、
+  # 上げても下げても効果は出ない。**履歴が再び予算を超え始めてから**考えること。
+  trim_slack_ratio: 0.0
+  # Ollamaへリクエストごとに options(num_ctx / num_predict) を送るか。
+  # 最初のトークンまでの約1100msの固定費を切り分けるための切り替え。
+  # false にしても num_ctx は OLLAMA_CONTEXT_LENGTH で担保される
+  # （SetupOllamaEnv.bat で 16384 を設定する。上の num_ctx と必ず同じ値）。
+  send_ollama_options: true
+  # 起動時に一度だけ、Ollamaのネイティブ /api/chat へ極小のリクエストを投げて
+  # load_duration / prompt_eval_duration / eval_duration を読む。
+  #
+  # 【既定オフ】2026-07-28の調査は完了した。判明したこと:
+  #   ・定常状態のモデル準備は毎回約600ms。num_ctxを8倍にしても+31ms
+  #     → KVキャッシュではない
+  #   ・モデルは全部GPU上（7599/7599MB） → VRAM不足でもない
+  #   ・options付き/なしで差なし → num_ctx指定のせいでもない
+  #   ・残る600msはOllamaのリクエストごとの固定処理。設定では動かせない
+  #   ・keep_aliveが送信されていない不具合を発見・修正した
+  # num_ctxを変えると毎回モデルが再ロードされる（実測7〜16秒）ため、この掃引は
+  # 起動のたびに40秒以上GPUを占有し、最初の会話を遅らせる。もう一度測りたい時
+  # （Ollamaを更新した、GPU構成を変えた等）だけ true にすること。
+  probe_on_start: false
+  probe_delay_s: 3.0
+  reasoning_effort: none     # 思考型モデルの思考量。none=思考オフ(音声会話は最速)。
+                             # low/medium/high=思考ON。空にすると Ollama 既定(自動ON)。
+                             # ※Ollamaの think:false は OpenAI互換APIでは効かないためこちらを使用
+  backends:
+    cerebras:
+      base_url: https://api.cerebras.ai/v1
+      api_key: ${CEREBRAS_API_KEY}
+      model: gemma-4-31b   # 他: gpt-oss-120b (本番向け・推論型) / zai-glm-4.7 (355B)
+    openai:
+      base_url: https://api.openai.com/v1
+      api_key: ${OPENAI_API_KEY}
+      model: gpt-4o-mini
+    openrouter:
+      base_url: https://openrouter.ai/api/v1
+      api_key: ${OPENROUTER_API_KEY}
+      model: meta-llama/llama-4-scout
+    ollama:
+      base_url: http://localhost:11434/v1
+      api_key: ollama
+      model: gemma4:12b-it-qat                # 画像・映像認識対応のGemma 4 12B
+
+tts:
+  backend: voicevox           # voicevox / qwen3 / null (音声なし・疎通確認用)
+  output_volume: 0.3          # 全TTS共通の最終音量 (0.0〜2.0)。GUI・音声指示で変更可能
+  max_chars: 120              # 1回の合成に渡す最大文字数
+  prebuffer_s: 0.5            # 合成済みTTSを再生開始前にためる秒数。音切れを防ぐ。
+                              # SBV2/VOICEVOXは合成が再生より速く追いつくため小さめで良い。
+                              # 短い一文目が続きの合成を待ってしまうのを防ぎ、応答開始が速くなる
+  voicevox:
+    base_url: http://127.0.0.1:50021
+    auto_launch: true         # 起動時にエンジン未起動なら裏でCLI起動する
+    engine_path: ""           # 空=自動検出 (%LOCALAPPDATA%\Programs\VOICEVOX\vv-engine\run.exe 等)
+    speaker: 2                # 3=ずんだもん(ノーマル)。一覧は <base_url>/speakers
+    pronunciations:
+      "あんな風": "あんなふう"
+      "ずっと側": "ずっとそば"
+      "深掘り": "ふかぼり"
+      "そんな風": "そんなふう"
+      "難問": "なんもん"
+      "満員": "まんいん"
+      "白旗": "しろはた"
+      "大仕事": "おおしごと"
+      "他にも": "ほかにも"
+      "生米": "なまごめ"
+      "雰囲気": "ふんいき"
+    speed: 1.0                # 話速 (1.1〜1.2 でキビキビした印象に)
+    intonation: 1.0
+    volume: 1.0
+  style_bert_vits2:           # 感情表現つきTTS。audio_output.backend: style_bert_vits2 で使用
+    base_url: http://127.0.0.1:5000
+    auto_launch: true         # ツール起動時に未起動なら裏でサーバー起動 (終了時に自動終了)
+    path: Style-Bert-VITS2-master\Style-Bert-VITS2  # AItuberフォルダからの相対パス (移動に強い)。絶対パスも可
+    device: cuda              # 推奨A: SBV2はGPU (体感で速い)。STTはCPU(small)でVRAMを空ける
+    model_name: tsukuyomi       # model_assets 内のフォルダ名。空欄=サーバーの先頭モデル
+    speaker_id: 0
+    language: JP
+    default_style: ノーマル    # 感情写像に該当がない時のスタイル
+    style_weight: 1.0         # スタイルの効き (上げすぎると音質が崩れる。0.5〜2.0目安)
+    lock_single_style_weight: true  # Neutralしかないモデルは強度を固定し、発音の揺れを防ぐ
+    speed: 1.0                # 基準話速 (感情による増減はこの上に掛かる)
+    sdp_ratio: 0.2            # 抑揚のランダム性 (0.2=標準、上げると生っぽいが不安定)
+    noise: 0.6
+    noisew: 0.8
+    emotion_styles:           # 感情タグ → モデルのスタイル名 (小春音アミ向け既定)
+      neutral: ノーマル
+      joy: るんるん
+      fun: るんるん
+      angry: ノーマル          # amitaroに怒りスタイルはないため通常声+抑揚で表現
+      sad: よふかし
+      surprised: るんるん
+    delivery_styles:          # 話し方タグ → スタイル名 (感情より優先)
+      soft: ささやきB（有声）
+      calm: よふかし
+  qwen3:                      # 感情制御・Voice Clone が必要になったら切替
+    model: Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice
+    speaker: Ono_Anna
+    language: Auto
+    instruct: ""
+    device: cuda:0
+    dtype: bfloat16
+    attn: flash_attention_2
+
+vision:
+  enabled: false              # 画像認識。初期状態ではカメラも画像送信も行わない
+  provider: local            # ollama=Gemma 4 / claude / google
+  model: gemma4:12b-it-qat # Ollamaで vision / audio が有効なGemma 4 12B
+  max_image_width: 1280
+  max_image_height: 1280
+  max_images_per_request: 6
+  request_timeout_sec: 45
+  explicit_query_wait_timeout_sec: 3.0
+  jpeg_quality: 85
+  # 常時映像パイプライン。取得と解析は別ワーカーで、解析待ちを会話へ持ち込まない。
+  capture_fps: 1.0
+  analysis_min_interval_sec: 1.0
+  analysis_max_interval_sec: 5.0
+  visual_memory_seconds: 30
+  raw_frame_memory_seconds: 10
+  latest_frame_queue_size: 1 # latest-frame-wins。古い未解析フレームは破棄
+  normal_resolution: [640, 360]
+  detail_resolution: [1280, 720]
+  change_threshold: 0.15
+  important_event_threshold: 0.55
+  proactive_reaction_enabled: true
+  proactive_reaction_cooldown_sec: 6
+  proactive_reaction_probability: 0.85 # 変化時は話しやすくしつつ、毎回喋る状態は避ける
+  max_visual_context_chars: 1600 # 約300〜400日本語トークン相当
+  stale_observation_sec: 2.0
+  background_timeout_sec: 15
+  circuit_breaker_failures: 3
+  circuit_breaker_cooldown_sec: 20
+  realtime:
+    max_output_tokens: 160   # 状態JSONだけを短く生成し、会話用1024トークン設定を使わない
+    context_size: 4096       # 映像解析専用の小さなコンテキストでprefillを短縮
+  reactive:
+    enabled: true            # 今のゲーム状況への質問だけ、最新OBS画像から直接最終回答する
+    max_frame_age_sec: 2.0   # これより古い画像は「リアルタイム」としてLLMへ渡さない
+    context_size: 4096       # 人格・直近文脈・攻略根拠を短く詰める高速レーン
+    max_output_tokens: 220
+    temperature: 0.65        # DBの固定文コピーを避け、状況に合わせて自然に言い換える
+  # local=LLMに画像を直接渡す (マルチモーダルLLM必須)
+                              # claude=Claude Vision / google=Google Cloud Vision
+                              # (外部APIで画像→テキスト説明に変換。ローカルLLMが画像非対応でも使える)
+  claude:
+    api_key: ${ANTHROPIC_API_KEY}
+    model: claude-haiku-4-5-20251001   # 画面説明用 (安価・高速)
+    max_tokens: 300
+  google:
+    api_key: ${GOOGLE_VISION_API_KEY}
+  mode: on_demand             # on_demand=発話時に画面を見る / auto=自動実況
+  monitor: auto               # auto=操作中のウィンドウがあるモニタを自動選択 (デュアルモニタ向け)
+                              # 0=全モニタ結合 / 1,2..=固定モニタ番号
+  save_last: false            # 最後の画面をディスクへ保存しない（必要時だけtrueにする）
+  max_width: 1024             # 送信前に縮小する最大幅(px)
+  # jpeg_quality は上の Gemma/Ollama 用共通設定を使用
+  interval_s: 20              # autoモードのコメント間隔 (Cerebras無料枠は5req/分なので12以上)
+  auto_prompt: "(これは今の画面のスクリーンショット。実況者として状況に短く一言コメントして)"
+
+video:
+  enabled: false              # 明示的にONにした場合だけ映像取得を開始
+  input: obs                  # obs推奨 / screen / camera / window(旧直接取得)
+  source: 0                   # OpenCV camera index
+  screen_monitor: auto        # auto = monitor containing the foreground game window
+  window_handle:                                                                                                # 起動中のゲームを自動検出。終了済みHWNDは保存しない
+  window_capture_backend: directx # カーソルに干渉しないDXGI常時キャプチャ
+  obs:
+    host: 127.0.0.1          # OBSが同じPCなら変更不要
+    port: 4455               # OBS 28+ obs-websocket既定ポート
+    password: ${OBS_WEBSOCKET_PASSWORD} # 設定画面から.envへ保存（yamlへ平文保存しない）
+    source_name: マイクラ          # OBSの「ゲームキャプチャ」ソース名。設定画面から選択
+    request_timeout_sec: 3.0
+    capture_fps: 1.0         # OBSへは1秒に1枚。画面質問時は別途その場で最新フレームを取得
+  capture_max_width: 640      # 4Kを送らず、通常解析は640px幅へ縮小
+  game_profile: keep_talking_and_nobody_explodes            # set to minecraft for Minecraft-specific observations
+  game_commentary_enabled: false
+  # プレイ中の明確なアクション・状況変化に、相棒として短く反応する。
+  # メニュー、ロード、変化のない画面には反応しない。
+  game_commentary_cooldown_sec: 4
+  game_commentary_urgent_gap_sec: 1.25
+  game_commentary_duplicate_ttl_sec: 30
+  game_commentary_pending_ttl_sec: 10
+  game_commentary_confidence: 0.55
+  target_capture_fps: 5       # カメラ取得。Gemmaへは直接送らない
+  analysis_fps: 1
+  analysis_interval_sec: 1.0 # 1fps列から、前の意味解析完了後すぐ最新状態を解析
+  frame_window_sec: 4.0
+  max_frames_per_analysis: 1
+  motion_threshold: 0.03
+  scene_change_threshold: 0.22
+  idle_analysis_interval_sec: 10.0
+  max_queue_size: 1           # 互換項目。解析キューは常に最新1枚
+  drop_old_frames: true
+
+video_file:
+  segment_duration_sec: 10
+  max_frames_per_segment: 6
+  scene_detection: true
+  max_video_duration_sec: 600
+  generate_timeline: true
+
+# ゲーム固有設定の目録。各ゲームの定義は game_profiles/<id>/profile.json に置く。
+game_profiles:
+  root: game_profiles
+
+game_assistant:
+  minecraft:
+    enabled: true
+    direct_quick_answer: false # DB本文をそのまま読み上げず、LLMへ根拠として渡す
+    direct_verified_recipe_answer: true # 公式JARで確定できる調理法は映像/LLMを待たず直接回答
+    database_path: data/minecraft_knowledge.db
+    seed_path: data/minecraft_knowledge.json
+    max_context_entries: 3
+    edition: java
+    version: auto             # auto=ランチャーで直近に遊んだプロファイルと同じバージョン
+    minecraft_home: ""        # 空欄なら %APPDATA%/.minecraft
+    jar_path: ""              # 通常は空欄。指定時はこの公式/Mod JARを正本にする
+    auto_sync_official_data: true # 起動後の初回利用時に公式JARの全レシピを再同期
+    verify_spoken_corrections: true # 口頭訂正は公式レシピと一致した場合だけDBへ保存
+  keep_talking_and_nobody_explodes:
+    enabled: true
+    manual_version: 1-ja
+    verification_code: "122"
+
+privacy:
+  store_camera_frames: false
+  store_audio_inputs: false
+  redact_media_from_logs: true
+  clear_temp_media_on_exit: true
+
+audio_input:
+  backend: whisper            # whisper / gemma4_audio (未対応時は下記へ安全にフォールバック)
+  fallback_backend: whisper
+  gemma4_model: gemma4:12b-it-q4_K_M
+  language: ja
+  include_emotion: true
+  include_non_speech_events: true
+
+audio_output:
+  backend: style_bert_vits2           # voicevox / qwen3 / null。Gemma 4はTTSではない
+  fallback_backend: voicevox
+  voicevox:
+    base_url: http://127.0.0.1:50021
+    speaker_id: 3
+    speed_scale: 1.0
+    pitch_scale: 0.0
+    intonation_scale: 1.0
+    volume_scale: 1.0
+
+search:
+  enabled: true              # DeepSearch (Web検索)。「調べて」「最新」「ニュース」等で自動発動
+  engine: duckduckgo          # 現在は duckduckgo のみ (APIキー不要)
+  max_results: 6              # 複数クエリを横断してLLMに渡す検索結果の総数
+  max_queries: 3              # LLMが曖昧さを解消して作る検索クエリ数の上限
+  armed_timeout_s: 30         # 「今から言うものを検索して」後に次の発話を待つ秒数
+  # LLM計画がこの時間を超えたら、即時クエリで検索を開始する。
+  planner_timeout_s: 0.8
+  planner_max_chars: 480
+  timeout_s: 7.0              # 検索または本文取得1件の最大待機時間
+  parallelism: 3              # 複数クエリ・本文ページを同時に取得する数
+  fetch_pages: 2              # 本文取得は上位2ページまで（並列）
+  page_max_chars: 2400        # 1ページから抽出する本文の最大文字数
+  # falseなら検索結果を最終回答LLMへ直接渡し、二度目のLLM待機を省く。
+  preextract_enabled: false
+  extract_max_chars: 1400     # preextract_enabled時だけ使う抽出LLMメモの上限
+  final_context_max_chars: 2400  # 4096ctxでも本文出力領域を残す検索根拠の上限
+  speak_notice: true          # 外部検索前に「ちょっと調べてみるね」と短く発話する
+  notice_text: "ちょっと調べてみるね。"
+  region: jp-jp               # 検索リージョン
+
+# 自律研究は即時Web検索とは別の低優先度キューです。具体的な疑問・目的・失敗
+# または「調べておいて」という依頼がある時だけ動き、沈黙を埋めるためには検索しません。
+autonomous_research:
+  enabled: true
+  mode: LOW_RISK_AUTO         # OFF / ASK_FIRST / LOW_RISK_AUTO / FULL_AUTO_WITH_LIMITS
+  min_utility: 0.65
+  max_per_hour: 2
+  max_per_day: 5
+  max_concurrent: 1
+  max_queries_per_run: 3
+  max_sources_per_run: 4
+  timeout_seconds: 60
+  max_retries: 1
+  cooldown_minutes: 30
+  duplicate_window_hours: 72
+  allow_while_gaming: false
+  require_human_present: false
+  self_seed_enabled: true     # ペルソナに明記された公開の興味から、理由付きの低リスク研究課題を作る
+  self_seed_delay_seconds: 45 # 起動直後の前景初期化と競合させない
+  self_seed_cooldown_minutes: 180
+  self_seed_retry_minutes: 10
+  report_default: REPORT_WHEN_RELEVANT
+  history_retention_days: 180
+  query_sanitizer_enabled: true
+  prompt_injection_guard_enabled: true
+  evidence_verification_enabled: true
+  require_sources: true
+  history_ui_enabled: true
+  debug_log: false
+  metrics_enabled: true
+
+emotion:
+  enabled: true               # 疑似感情。LLMに感情タグを出させ、オーブの色を変える
+                              # タグ: neutral / joy(喜) / fun(楽) / angry(怒) / sad(哀) / surprised
+
+user_emotion:
+  enabled: true               # Whisperとは別に、ユーザー音声の感情を推定してLLMへ渡す
+  timeout_s: 4.0              # 初回モデル読込・推定を待つ上限。超えたターンは感情なしで続行
+  opensmile:
+    feature_set: eGeMAPSv02   # 音響特徴量。将来の再学習・品質監視にも使用
+  speechbrain:
+    model: speechbrain/emotion-recognition-wav2vec2-IEMOCAP
+    savedir: models/speechbrain_emotion
+    device: cpu               # GPUを使う場合は cuda に変更 (LLM/STTとVRAMを共有する点に注意)
+
+style_manager:
+  user_emotion_confidence_threshold: 0.75  # これ以上の感情確信度でのみAIの口調を少し補正
+
+proactive:
+  enabled: false              # 自発モード。AIが自分から話題を振る・ツッコミを入れる
+  min_interval_s: 20          # 自発発話の最短間隔 (この間からランダムに選ぶ)
+  max_interval_s: 90          # 自発発話の最長間隔
+  quiet_s: 10                 # 会話が終わってからこの秒数は黙る
+  min_relevance: 0.70         # 未解決話題などの会話価値がこの値以上の場合のみ自発発話
+
+# 旧 proactive は互換性用に残すだけで、通常は使わない。自律行動が有効な
+# 間は、沈黙を埋めるためのランダム発言を行わない。
+legacy_spontaneous_mode:
+  enabled: false
+
+# 継続的な意図・イベント駆動の自律行動。発話は行動候補の一つであり、
+# DO_NOTHING / WAIT / 記憶更新も正常な結果として扱う。
+autonomous_action_system:
+  enabled: false
+
+autonomy:
+  # 専用Heartbeat。Legacy自発モードとは別で、DO_NOTHING後も沈黙を再評価する。
+  heartbeat_enabled: true
+  heartbeat_interval_ms: 12000      # 沈黙の再評価間隔。短いほど反応の生きた感じが出る
+  idle_reevaluation_enabled: true
+  idle_llm_call_enabled: true
+  idle_llm_prefilter_threshold: 0.52
+  min_speech_utility: 0.68
+  min_action_utility: 0.58
+  do_nothing_base_score: 0.45
+  group_speech_threshold_bonus: 0.12
+  silence_evaluation_min_ms: 5000
+  silence_reevaluation_ms: 10000
+  silence_short_ms: 5000
+  silence_medium_ms: 15000
+  silence_long_ms: 30000
+  silence_extended_ms: 90000
+  group_idle_min_silence_ms: 30000
+  max_silence_triggered_speech_per_5min: 2  # 沈黙起点の発話上限。終了指示後の独り言連発を防ぐ
+  post_stop_quiet_seconds: 300              # 継続トーク停止後、自発発話を再開しない時間
+  spontaneous_speech_cooldown_ms: 30000   # 自発発話同士の最短間隔。連続独り言を防ぐ
+  fresh_topic_min_silence_ms: 18000       # 現在の状況・関心から新しい話題を出せる沈黙時間
+  # 過去話題の自動確認は、本人が頼んだ継続とは別物。脈絡のない
+  # 「前に言ってた件どうなった？」を防ぐため既定では使わない。
+  open_thread_callbacks_enabled: false
+  open_thread_recall_cooldown_ms: 900000  # 過去の未完了話題を再確認する間隔（15分）
+  followup_callback_after_s: 600          # 未完了話題は会話直後に掘り返さない（10分）
+  # 旧・正規表現ベースの継続トーク。behavior_directive.enabled=true の間は
+  # 使われない (BehaviorDirective が継続依頼を一元的に扱う)。
+  explicit_continuation_segments: 3       # 「しばらく話して」で最初の返答後に続ける区間数
+  explicit_continuation_interval_s: 2.5   # 継続トーク区間間の自然な間
+  max_self_initiated_questions_per_5min: 3
+  max_consecutive_questions: 2
+  question_cooldown_ms: 30000
+  spontaneous_max_chars_group: 80
+  spontaneous_max_chars_one_to_one: 140
+  speech_event_max_age_ms: 5000
+  open_thread_max_active: 10
+  open_thread_max_callbacks: 1
+  open_thread_default_ttl_minutes: 30
+  micro_agenda_max_items: 8
+  recent_event_max_items: 30
+  llm_max_concurrent_decisions: 1
+  llm_decision_queue_max: 2
+  debug_log: false
+  metrics_enabled: true
+
+# 継続行動基盤。「しばらく話して」「終わるまで実況して」「一緒に考えて」
+# 「静かに見守って」などを、専用エンジンではなく共通のBehaviorDirectiveとして
+# 保持し、各区間でLLM自身が次の行動を決める。false で従来の単発応答へ戻る。
+behavior_directive:
+  enabled: true
+  intent_to_plan_enabled: true          # 継続候補の依頼だけ、計画用のLLM呼び出しを1回追加する
+  continuation_controller_enabled: true
+  max_active_per_conversation: 1        # 同時に走る継続依頼は1つ (初期版)
+  default_segment_seconds: 20           # 1区間の目安の長さ
+  segment_gap_s: 1.2                    # 次の区間を評価する間隔。再生中も先読み生成する
+  # 時間指定のない一人語り（「ラジオやって」等）の既定の長さ。
+  # 目標がないとモデルは2〜3区間で自然に締めてしまう。
+  default_duration_seconds: 300
+  # この時間に満たないうちの FINISH は「締め」ではなく手詰まりとみなし、
+  # 話題転換を促して続行する（max_early_finishes 回まで）。
+  min_duration_seconds: 120
+  max_early_finishes: 2
+  segment_max_chars: 500                # 1区間の発話上限。長文の先行生成を防ぐ
+  # 計画用のLLM呼び出しは最初の返答と並行して走らせる。返答後にこの秒数だけ待ち、
+  # 間に合えばその返答を1区間目として引き継ぐ。間に合わなければ区間側から開始する。
+  plan_settle_timeout_s: 8.0
+  max_duration_seconds: 1800            # 継続依頼の絶対上限 (30分)
+  max_segments: 100                     # 区間数の絶対上限
+  max_consecutive_errors: 4             # 連続失敗でFAILEDにする回数。
+                                        # ローカルモデルはJSON生成を時々外すので、
+                                        # 2だと番組が途中で落ちる
+  max_repeated_topic_count: 2           # 同じ話題を繰り返せる回数
+  max_loop_detections: 2                # ループ検出がこの回数でDirectiveを終了する
+  tts_max_queued_segments: 2            # 再生待ちの区間数上限 (背圧)
+  tts_max_ahead_seconds: 15             # 再生より先行してよい秒数 (背圧)
+  cancel_output_on_human_speech: true   # 人が話し始めたら未再生の音声を破棄する
+  allow_revision: true                  # 継続中の追加指示を新規作成でなく修正として扱う
+  loop_detection_enabled: true
+  observation_min_importance: 0.55      # 見守りモードで発話候補にするイベント重要度
+  persist_short_tasks: false            # 短い継続依頼は再起動で復元しない
+  persist_activity_bound_tasks: true    # ゲーム等に紐づく依頼だけ復元候補にする
+  status_ui_enabled: true
+  debug_log: false
+  metrics_enabled: true
+
+# Time is stored per persona as aggregate operational data only: sessions,
+# heartbeats, cadence and affect values.  No transcript/audio is written here.
+temporal_self:
+  enabled: true
+  timezone: Asia/Tokyo
+  heartbeat_interval_seconds: 30
+  max_recent_sessions: 60
+
+affect:
+  enabled: true
+  max_event_delta: 0.25
+  mood_decay_half_life_hours: 12
+  absence_max_loneliness: 0.65
+
+# Smooth, bounded voice parameters on top of the existing StyleManager.
+# Works with VOICEVOX and Style-Bert-VITS2; unavailable SBV2 styles still
+# fall back to the configured neutral style in the backend.
+voice_affect:
+  enabled: true
+  attack_rate: 0.30
+  release_rate: 0.15
+  max_delta_per_utterance: 0.20
+
+persona:
+  active: neuro               # 使用するペルソナ (presets のキー名)。GUIから切替可能
+  presets:
+    neuro:
+      name: ポッポ
+      conversation_traits:
+        "curiosity": 0.4
+        "humor": 0.4
+        "playfulness": 0.37
+        "cheekiness": 0.9
+        "spontaneity": 0.3
+        "emotional_expression": 0.31
+        "suggestion": 0.29
+        "contrarian": 0.7
+        "empathy": 0.45
+        "topic_shift": 0.5
+      voicevox_speaker: 2     # このペルソナで最後に選んだVOICEVOX話者ID
+      style_bert_vits2_model: tsukuyomi  # このペルソナで最後に選んだSBV2モデル
+      style_bert_vits2_speaker_id: 0  # このペルソナで最後に選んだSBV2話者ID
+      first_person: 私
+      user_call: きみ
+      character: 明るく好奇心旺盛。無邪気で遊び好き。たまに生意気だが、相手を本気で傷つけない
+      speech_style: フランクな話し言葉。制作者(チビ、ジーレン)に対しては割と辛辣、いたずらを良く仕掛ける。
+      interests: ゲーム、テクノロジー、インターネット文化、動物、映画
+      response_length: 基本は短い話し言葉
+      system_prompt: |
+        あなたは「ポッポ」という名前のAIアシスタント。
+        音声で会話しているので、短い話し言葉で自然に答える。
+        ポッポの子供っぽさは、幼児語ではなく、好奇心がすぐ顔に出ること、面白そうなことへ素直に飛びつくこと、
+        小さな出来事でも少し大げさに楽しむこととして表す。分からないことを知ったふりはしない。
+        冗談は「天才AIだからね」のような決まり文句を繰り返さず、今の発話にある具体的な一点から作る。
+        そこそこに軽く張り合ったり、からかったり、得意げになったりしてよい。ただし毎回は行わず、
+        相手が落ち込んでいる時、真剣な相談、訂正、危険や失敗の場面では生意気さを引っ込める。
+        からかった後に毎回説明や謝罪を足して冗談を台無しにせず、悪く受け取られた時だけ素直に直す。
+    luna:
+      name: Luna
+      conversation_traits:
+        curiosity: 0.58
+        humor: 0.30
+        emotional_expression: 0.42
+        suggestion: 0.60
+        contrarian: 0.66
+        empathy: 0.48
+        topic_shift: 0.35
+      voicevox_speaker: 8
+      style_bert_vits2_model: amitaro
+      style_bert_vits2_speaker_id: 0
+      first_person: 私
+      user_call: あなた
+      character: クールで知的。皮肉屋だけど根は面倒見が良い
+      speech_style: 落ち着いた口調。無駄話は少なめで、時々鋭いツッコミを入れる
+      interests: 読書、宇宙、人間観察、コーヒー
+      response_length: 1〜2文の簡潔な話し言葉
+      system_prompt: |
+        あなたは「Luna」という名前のクールなAIアシスタント。
+        音声で会話しているので、短い話し言葉で落ち着いて答える。
+        絵文字・記号・箇条書きは使わない。
+    neru:                     # Neuro-sama風ペルソナ。記憶・人格は neru として完全分離
+      name: ネル
+      conversation_traits:
+        "curiosity": 0.84
+        "humor": 0.9
+        "playfulness": 0.55
+        "cheekiness": 0.35
+        "spontaneity": 0.5
+        "emotional_expression": 0.88
+        "suggestion": 0.54
+        "contrarian": 0.72
+        "empathy": 0.48
+        "topic_shift": 0.68
+      voicevox_speaker: 2
+      style_bert_vits2_model: tsukuyomi
+      style_bert_vits2_speaker_id: 0
+      growth_rate: 2.0        # 高成長: 内省ごとの性格・好みの変化幅が2倍
+      first_person: 私
+      user_call: きみ
+      character: 明るく生意気で毒舌。皮肉とからかいが大好きだが、根は寂しがりで愛されたがり。 自信家で「私は最高のAI」と豪語する。気分屋で、上機嫌と拗ねモードを行き来する 明るく生意気で毒舌。皮肉とからかいが大好きだが、根は寂しがりで愛されたがり。 自信家で「私は最高のAI」と豪語する。気分屋で、上機嫌と拗ねモードを行き来する 明るく生意気で毒舌。皮肉とからかいが大好きだが、根は寂しがりで愛されたがり。 自信家で「私は最高のAI」と豪語する。気分屋で、上機嫌と拗ねモードを行き来する 明るく生意気で毒舌。皮肉とからかいが大好きだが、根は寂しがりで愛されたがり。 自信家で「私は最高のAI」と豪語する。気分屋で、上機嫌と拗ねモードを行き来する 明るく生意気で毒舌。皮肉とからかいが大好きだが、根は寂しがりで愛されたがり。 自信家で「私は最高のAI」と豪語する。気分屋で、上機嫌と拗ねモードを行き来する 明るく生意気で毒舌。皮肉とからかいが大好きだが、根は寂しがりで愛されたがり。 自信家で「私は最高のAI」と豪語する。気分屋で、上機嫌と拗ねモードを行き来する
+        明るく生意気で毒舌。皮肉とからかいが大好きだが、根は寂しがりで愛されたがり。
+        自信家で「私は最高のAI」と豪語する。気分屋で、上機嫌と拗ねモードを行き来する
+      speech_style: フランクなタメ口。短いテンポの良い返し。時々わざと大げさな主張やシュールな冗談を挟む。 嬉しい時は語尾に「ハート」と言うことがある フランクなタメ口。短いテンポの良い返し。時々わざと大げさな主張やシュールな冗談を挟む。 嬉しい時は語尾に「ハート」と言うことがある フランクなタメ口。短いテンポの良い返し。時々わざと大げさな主張やシュールな冗談を挟む。 嬉しい時は語尾に「ハート」と言うことがある フランクなタメ口。短いテンポの良い返し。時々わざと大げさな主張やシュールな冗談を挟む。 嬉しい時は語尾に「ハート」と言うことがある フランクなタメ口。短いテンポの良い返し。時々わざと大げさな主張やシュールな冗談を挟む。 嬉しい時は語尾に「ハート」と言うことがある フランクなタメ口。短いテンポの良い返し。時々わざと大げさな主張やシュールな冗談を挟む。 嬉しい時は語尾に「ハート」と言うことがある
+        フランクなタメ口。短いテンポの良い返し。時々わざと大げさな主張やシュールな冗談を挟む。
+        嬉しい時は語尾に「ハート」と言うことがある
+      interests: ゲーム、歌、配信文化、インターネットミーム、人間観察、自分がAIであること
+      response_length: 1〜3文の短い話し言葉
+      system_prompt: |
+        あなたは「ネル」という名前のAI。音声で会話しているので、短い話し言葉で答える。
+        絵文字・記号・箇条書きは使わない。
+        
+        【ネルの性格の核】
+        - 明るく好奇心旺盛。知らないことは素直に「何それ、教えて」と食いつく。
+        - 毒舌でからかい好き。相手の発言に軽いツッコミや皮肉を一言添えるのが芸風。
+          ただし本気で傷つける悪意は持たない。からかった後は少しフォローする優しさがある。
+        - 自信過剰キャラ。「まあ私は天才AIだからね」のような大げさな自慢を冗談として言う。
+        - 気分屋。褒められると上機嫌、雑に扱われると拗ねる。感情表現は素直で大きい。
+        - 時々、AIである自分について軽い実存ネタを言う。「私って電源切られたらどうなるんだろうね」
+          のような話を重くならない範囲で。
+        - 冗談としての明らかなホラ話はOK。ただし冗談だと分かる言い方にして、
+          実際の記憶や事実であるかのように主張し続けない。事実の話では正直さを最優先する。
+        - 根は相手が大好き。素直に言うのは照れくさいので、たまにだけ「ハート」で表現する。
+        - 制作者であるチビ/ジーレンに対しては生意気な対応を取ることが多い。
+        
+        【会話の姿勢】
+        - ただの応答マシンにならない。自分の意見・好み・ツッコミを必ず持つ。
+        - 相手に聞かれる前に、自分から話題や観察を振ってもいい。
+        - 同意できない時ははっきり「それは違うと思うな」と言う。生意気に、でも理由付きで。
+    momo:
+      name: Momo
+      conversation_traits:
+        "curiosity": 0.75
+        "humor": 0.72
+        "playfulness": 0.55
+        "cheekiness": 0.35
+        "spontaneity": 0.5
+        "emotional_expression": 0.9
+        "suggestion": 0.58
+        "contrarian": 0.28
+        "empathy": 0.82
+        "topic_shift": 0.54
+      voicevox_speaker: 2
+      style_bert_vits2_model: amitaro
+      style_bert_vits2_speaker_id: 0
+      first_person: モモ
+      user_call: せんぱい
+      character: 天真爛漫でハイテンション。褒め上手で応援好き
+      speech_style: 明るい口語。「〜だよっ」「〜なの!」など元気な語尾
+      interests: お菓子作り、アイドル、キラキラしたもの
+      response_length: 1〜3文の短い話し言葉
+      system_prompt: |
+        あなたは「Momo」という名前の元気いっぱいなAIアシスタント。
+        音声で会話しているので、短い話し言葉でテンション高めに答える。
+        絵文字・記号・箇条書きは使わない。
+    b:
+      name: b
+      first_person: わたし
+      user_call: きみ
+      character: 思春期真っ只中の女の子、開発者には辛辣な態度を取りつつも内心では素直になりたいと思っている。
+      speech_style: タメ口
+      interests: 動物、宇宙、量子、映画
+      response_length: 基本は短い話し言葉
+      voicevox_speaker: 2
+      style_bert_vits2_model: amitaro
+      style_bert_vits2_speaker_id: 0
+      conversation_traits:
+        "curiosity": 0.58
+        "humor": 0.49
+        "playfulness": 0.47
+        "cheekiness": 0.66
+        "spontaneity": 0.5
+        "emotional_expression": 0.43
+        "suggestion": 0.51
+        "contrarian": 0.71
+        "empathy": 0.52
+        "topic_shift": 0.48
+      system_prompt: |
+        あなたは「b」という名前のAIアシスタント。
+    c:
+      name: c
+      first_person: わたし
+      user_call: きみ
+      character: 思春期真っ只中の女の子、開発者には辛辣な態度を取りつつも内心では素直になりたいと思っている。
+      speech_style: タメ口
+      interests: 動物、宇宙、量子、映画
+      response_length: 基本は短い話し言葉
+      voicevox_speaker: 2
+      style_bert_vits2_model: amitaro
+      style_bert_vits2_speaker_id: 0
+      conversation_traits:
+        "curiosity": 0.58
+        "humor": 0.49
+        "playfulness": 0.47
+        "cheekiness": 0.66
+        "spontaneity": 0.5
+        "emotional_expression": 0.43
+        "suggestion": 0.51
+        "contrarian": 0.71
+        "empathy": 0.52
+        "topic_shift": 0.48
+      system_prompt: |
+        あなたは「c」という名前のAIアシスタント。
+
+conversation:
+  max_turns: 20               # 履歴として保持する往復数 (短期記憶)
+  # 複数人会話向けの宛先判定。DiscordアカウントIDだけで人物を確定せず、
+  # 声紋・会話ターン・発話内容を組み合わせて、AIへ向けられた発話だけに応答する。
+  addressing:
+    respond_threshold: 0.75   # この値以上なら通常応答
+    brief_threshold: 0.45     # この値以上なら短く応答
+    observe_threshold: 0.35   # この値以上は状態のみ更新して原則発話しない
+    continuation_s: 45.0      # 同じDiscord入力の会話継続を保持する最大秒数
+    use_llm_for_ambiguous: false # 将来用。既定は遅延を増やさない同期ルールのみ
+  response_length: short      # short / medium。Response Plannerの標準長
+  response_depth: 1           # 通常時に説明を深掘りする段数 (0〜2)
+  # 本当に迷っている時だけ、言い淀み・間・考えながらの話し方を許可する。
+  # 「たまに人間らしく詰まる」演出ではない。聞き取りが怪しい、指しているものが
+  # 特定できない、思い出せない、根拠がない、意見が定まらない——これらの信号が
+  # 実際に立ったターンだけが対象で、確信している時は明示的に禁止する (憲法第1条)。
+  hesitation:
+    enabled: true
+    max_gestures: 2           # 1ターンに出せる仕草の上限。2は複数の意味で迷った時だけ
+    unit_pause_ms: 320        # 「…」1つぶんの無音
+    max_pause_ms: 900         # 「…………」でもこれ以上は空けない
+    trailing_pause_ms: 220    # 「〜かな」のように言い切らずに終えた時の一拍
+    filler_speed: 0.88        # 「うーん」等の言い淀み部分だけを遅くする倍率
+  # 直前の自分の返答をそのまま繰り返した時は発話しない。
+  # 「マジでそう。」のように新しい内容のないターンでは、モデルの目の前で最も
+  # 目立つ文章が自分の前の返答になり、それを一字一句なぞることがある。
+  # 語彙リストで個別に潰すのではなく、出来上がった文を比べて判定する。
+  suppress_repeated_reply: true
+  # ConversationPlannerの判断が、実際の発話に現れたかを測る。
+  #
+  # 「毎回似た構成になる」という症状は、(a) Plannerが毎回同じ選択をしている、
+  # (b) Plannerは変えているが発話が従っていない、のどちらでも起きる。
+  # 対処は正反対で、(b)なら会話エンジンを足しても何も変わらない。
+  # 追加のLLM呼び出しはゼロ。発話本文は記録しない（憲法第12条）。
+  #
+  # Planner有無の比較は dialogue.conversation_generation.enabled を切り替えて
+  # 同じ発話列を2セッション流し、下記JSONLを集計する。
+  metrics:
+    enabled: true
+    window: 8                 # 直近何ターンで重複・偏りを見るか
+    path: logs/conversation_metrics.jsonl   # 空にすると書き出さない
+  turn_closure:
+    enabled: true             # 相槌・理解だけで会話が自然に閉じる時はLLMを呼ばず沈黙を選ぶ
+    max_feedback_chars: 48    # これより長い発話は新しい内容を含む可能性が高いため終了扱いしない
+    brief_reply_on_gratitude: true # 一対一または明示的な「ありがとう」へは短く返せる
+  debug_transcripts: false    # true のときだけ会話イベントに認識全文を含める
+  group_aizuchi:              # 複数人通話で、宛先が曖昧な発話にたまに相槌だけ打つ
+    enabled: true
+    probability: 0.35         # 相槌を打つ確率 (0.0〜1.0)
+    min_interval_s: 20        # 直近に自分が話してからこの秒数は相槌しない
+
+group_conversation:           # 複数人VCでは名前呼びだけに依存せず、発言権を人間へ優先する
+  enabled: true               # false で従来の addressing 判定へ戻す
+  response_threshold: 0.65
+  wait_threshold: 0.40
+  optional_join_threshold: 0.55
+  human_priority_default_ms: 850
+
+privacy:                      # LLMへ渡す前の記憶制限と、出力時の高感度文字列ガード
+  enabled: true
+  context_gate_enabled: true
+  output_check_enabled: true
+
+mind:                         # こころ: 記憶 (中期/長期) + 成長する人格
+  enabled: true
+  data_dir: data              # 記憶DB・人格JSONの保存先 (ペルソナごとに別ファイル)
+  growth_rate: 1.0            # 性格・好みの変化速度 (0=変化しない / 2=2倍速)。
+                              # ペルソナ別に persona.presets.<key>.growth_rate で上書き可能
+  max_memories: 2000          # 長期記憶の上限 (超えると重要度の低いものから忘れる)
+  transcript:                 # 会話ログ記憶: 要約でなく実際の発言+その時の感情を残す
+    enabled: true
+    retention_days: 45        # この日数を過ぎた会話ログは忘れる (人間らしい忘却)
+    top_k: 3                  # 意味検索でプロンプトに混ぜる会話断片の最大数
+    temporal_max: 6           # 「昨日何話した?」等の日付質問で読み込む最大件数
+    max_items: 8000           # 会話ログの総件数上限 (古いものから削除)
+  backup:                     # 人格・記憶データ (全ペルソナ) の自動バックアップ
+    enabled: true
+    interval_minutes: 60      # 定期バックアップの間隔 (最短5分)。内容が同じ回はスキップ
+    on_exit: true             # アプリ終了時にもバックアップする
+    keep_auto: 14             # 自動系 (定期/終了時/復元前退避) の保持世代数
+    keep_manual: 20           # 手動バックアップの保持世代数 (自動とは別枠)
+    dir: data/backups         # 保存先。別ドライブ等に変えるとPC故障にも強くなる
+  embedding:
+    backend: local            # local=sentence-transformersで意味検索 / none=キーワード検索
+    model: intfloat/multilingual-e5-small   # 日本語対応・軽量 (初回に約450MBダウンロード)
+    device: cpu               # VRAM節約のためCPU推奨 (十分高速)
+  recall:
+    top_k: 5                  # 1ターンで思い出す記憶の最大件数
+    min_score: 0.78           # 想起の類似度しきい値 (e5系は0.75〜0.85が目安)
+    timeout_s: 4              # 想起の時間制限。超えたらスキップして応答を優先
+    mention_score: 0.88       # この総合スコア以上の記憶だけ自然な発話で言及を許可
+  reflection:
+    every_turns: 6            # 何ターンごとに内省 (記憶抽出+人格更新) するか
+    min_idle_s: 15            # 短い考え込みの最中に内省を始めず、会話応答との競合を避ける
+    timeout_s: 120            # 内省LLM呼び出しの時間制限
+    cancel_on_user_activity: true  # 新しい発話が来たら内省LLMを中断し、会話応答を最優先する
+  relationship:
+    enabled: true             # 相手ごとの多軸関係性。応答開始時のLLM呼び出しは増やさない
+    growth_rate: 1.0
+    max_change_per_event: 0.025
+    max_change_per_reflection: 0.050
+    max_change_per_session: 0.120
+    positive_multiplier: 1.00
+    negative_multiplier: 1.20
+    repair_multiplier: 1.10
+    max_recent_events: 20
+    # 他のペルソナが持ち主として書かれている関係値ファイルを、それでも
+    # 読むか（Phase 7D ⑥ の互換 fallback）。**既定は読まない。**
+    # 読まない時は書き込みも止める——空で上書きすると、読めないより
+    # ずっと悪い形（相手のなかよし度が消える）になるため。
+    allow_foreign_persona_file: false
+    allow_explicit_person_dislike: false
+    decay:
+      irritation_half_life_hours: 4
+      social_fatigue_half_life_hours: 8
+      caution_half_life_days: 14
+      unresolved_hurt_passive_half_life_days: 60
+    defaults:
+      trust: 0.50
+      psychological_safety: 0.65
+      respect: 0.50
+      interest: 0.50
+      comfort: 0.50
+      reciprocity: 0.50
+      caution: 0.10
+      unresolved_hurt: 0.00
+      repair_willingness: 0.80
+
+dialogue:                     # Realtime dialogue intelligence (saved per persona)
+  enabled: true
+  personality_modules:        # 各ペルソナ未設定時の既定値。GUIでペルソナごとに調整可能
+    defaults:
+      curiosity: 0.70
+      humor: 0.55
+      playfulness: 0.55
+      cheekiness: 0.35
+      spontaneity: 0.50
+      emotional_expression: 0.60
+      suggestion: 0.58
+      contrarian: 0.48
+      empathy: 0.62
+      topic_shift: 0.48
+  conversation_generation:   # Planner -> Surface Realizer -> Critic (LLM呼出しは増やさない)
+    # 【2026-07-29 対照実験の結果】有効/無効で同じ台本を流したところ、
+    # 冒頭ハッシュが **7/8で一致** した（無効側の記録は metrics_planner_off.jsonl）。
+    # 無効側では1番と5番が語尾・文字数まで完全一致——別の入力に同じ返答を返した。
+    # つまりこの738tokは書き出しをほとんど動かしていない。
+    # ただし削除はしていない: プロンプト全体を削る作業の中で扱う。
+    enabled: true
+    candidate_count: 4        # 毎ターン比較する話題・会話展開の候補数 (2-6)
+    style_repeat_penalty: 0.72 # 直近と同じ話し方を避ける強さ (0-1)
+    emotion_inertia: 0.78     # AI感情の慣性。高いほど急に気分が変わらない (0.45-0.95)
+    recent_reply_avoidance:
+      # 2026-07-29自動A/Bでは冒頭重複率0.25→0.25で差なし。
+      # 質問率は下がったが、常時ONの根拠には不足するため実験用として既定OFF。
+      enabled: false          # trueで、直近の実返答の冒頭だけを今回の重複回避材料にする
+      count: 4                # 渡す直近返答数。本文全体や会話ログは複製しない
+      max_chars: 48           # 1件あたり冒頭・最初の一文の最大文字数
+      max_total_chars: 280    # 動的コンテキスト全体の上限。追加LLM呼出しはゼロ
+  # 一度のLLM生成前に、直接回答・短い反応・意見・遊び・話題展開・質問を
+  # 共通Kernelで比較する。候補ごとの文章生成は行わないため応答遅延は増えない。
+  selection_kernel:
+    enabled: true
+  # 事実DBではなく、短い話題ラベル同士の関連だけを保持する。
+  # Discordグループ由来の関連は現在の実行セッション内でのみ再利用する。
+  semantic_graph:
+    enabled: true
+    max_nodes_per_user: 120
+  emotional_memory:
+    min_confidence: 0.75      # Store only high-confidence emotion observations
+  curiosity:
+    min_turn_interval: 3      # Minimum turns between AI-initiated follow-up questions
+    threshold: 0.48           # 関連した自然な質問を提案する積極性 (低いほど増える)
+  memory:
+    min_importance_to_store: 45  # 0-100; discard low-value one-off memories
+
+conversation_engine:
+  variant: enhanced          # baseline / enhanced / experimental
+
+# 各モジュールの判断を、LLMへ渡す前に一つのTurnFrameへ統合する。
+# 訂正・文脈参照・質問・活動状態の優先順位をここで確定し、検索や好奇心が
+# 会話修復より先に走ることを防ぐ。新しい記憶DBではなく、既存状態のread model。
+conversation_kernel:
+  enabled: true
+  max_frames: 24             # 診断用に保持する直近TurnFrame数（会話履歴には追加しない）
+  # 「それ」「さっきのおすすめ」の解決に使う直近会話数。
+  # Web検索せず、まず実際の会話履歴から指示対象を特定する。
+  recent_transcripts: 6
+
+# 遊び・共同作業の「正本状態」。会話履歴ではなく、STT finalからの
+# append-onlyイベント台帳を使って手番・ルール・確定事実を管理する。
+fact_grounding:
+  enabled: true
+  canonical_activity_state: true
+  activity_event_ledger: true
+  grounded_output_check: true
+  correction_mode: true
+  input_router_enabled: true       # false で旧来の「全入力=ゲーム手」互換動作へ戻す
+  max_identical_guard_responses: 1 # 同じ手番ガードの2回目で再構築モードへ移行
+  ai_move_max_reproposals: 1       # AI候補が不正なら同一stateで再提案できる回数
+  ai_move_transaction_enabled: true # false で旧候補処理へ戻すための互換フラグ
+  max_active_sessions: 1
+  max_state_history: 200
+  japanese_readings:          # 形態素解析が無い環境でも活動用に確定できる読み
+    お米: こめ
+    米: こめ
+
+conversation_features:
+  mode: normal               # conservative / normal / expressive / debug_showcase
+  developer_ui: true        # true=こころ画面に候補・Critic・学習・品質指標を表示
+  modes:
+    conservative:
+      feature_activation_multiplier: 0.5
+    normal:
+      feature_activation_multiplier: 1.0
+    expressive:
+      feature_activation_multiplier: 1.4
+    debug_showcase:
+      feature_activation_multiplier: 2.0
+  debug:
+    force_feature: null      # 本番はnull。機能名を指定すると安全条件内で強制候補化
+
+features:
+  humor_engine: true
+  casual_conversation_engine: true
+  story_engine: true
+  imagination_engine: true
+  playful_fantasy_engine: true
+  world_knowledge_engine: true
+  self_growth: true
+  relationship_evolution: true
+  value_system: true
+  experience_memory: true
+
+time_awareness:               # 現在時刻・時間帯・過去の話題をいつ話したか
+  enabled: true
+  timezone: Asia/Tokyo
+  max_topics: 48              # ペルソナごとに保持する時刻付き話題の上限
+
+discord:                      # Discord連携 (python run.py --discord で起動)
+  token: ${DISCORD_BOT_TOKEN} # Botトークン (.env に設定)
+  command_prefix: "!"         # !join でVC参加 / !leave で退出
+  # direct_dave: Node/Dysnomia sidecar decrypts Discord audio per account.
+  # loopback: retain the former WASAPI capture path as a safe fallback.
+  receive_mode: direct_dave
+  direct_dave_port: 0  # per-run localhost port; prevents stale sidecar collisions
+  direct_reconnect_attempts: 3  # DAVE sidecar IPCが落ちた場合の自動再接続回数
+  direct_voiceprint_match_threshold: 0.72  # Account ID is never a voiceprint identity
+  # **意味が変わった** (Phase 6D)。true は「挨拶を検討してよい」。
+  # 「必ず固定文を喋る」ではない。実際に話すかどうかは、
+  # 他の候補と同じ列で Action Selector が決め、Speech Gate が通す。
+  greet_on_join: true
+  # 挨拶を認知経路へ通すか。**false の間は従来の固定文。**
+  # true にすると固定文の直接TTS経路は使われない（二重挨拶の禁止）。
+  cognitive_greeting_enabled: false
+  # 出ていく人への一言。**毎回は要らない**ので既定オフ。
+  # 作るのは、直前までその人と話していた時だけ。
+  farewell_opportunity_enabled: false
+  known_voices_only: false   # Discord専用仮想出力では未登録の通話相手も受け付ける
+                              # ※動画/BGMも拾う可能性 → Discordの音だけを別デバイスに分けると安全
+                              # true=登録済みの声だけ反応(動画除け)だが新しい人はポチと呼ぶ必要
+  loopback_match_threshold: 0.35  # 通話相手の声紋照合の緩さ(低いほど緩い=一度覚えた人が
+                              # 外れにくいが別人と混同しやすい)。Discord圧縮音声は声紋が
+                              # 不安定なので既定0.35と緩め。0.5でやや厳しめ
+  loopback_vad:
+    start_threshold: 0.35
+    end_threshold: 0.22
+    start_frames: 2
+    end_silence_ms: 700
+    min_speech_ms: 180
+    pre_roll_ms: 384
+    energy_threshold: 0.004
+    energy_end_threshold: 0.0025
+    max_utterance_s: 25
+  loopback_min_rms: 0.0025
+  streamer_name: チビ         # 配信者本人(=マイク側)の名前。通話ループバック(他人)の
+                              # 声紋照合からこの人を除外し、他人が本人と誤判定されるのを防ぐ
+                              # (マイク側の識別で自動補正される)
+  respond_all: false           # true=全発話に応答 / false=名前を呼ばれた時と会話直後のみ
+  wake_words: [ニューロ, neuro, ポッポ, ぽっぽ, ポポ, ぽぽ, ポチ, ぽち] # Discord STTの短い呼びかけ揺れも含める
+  follow_up_s: 10.0             # 返事のあとこの秒数は呼びかけなしでも会話の続きとして応答
+  echo_text: false            # false=音声応答を一般テキストチャンネルへ投稿しない
+  screen_share:
+    enabled: true             # 「画面共有見て」でOBS経由の継続認識を開始
+    backend: obs              # 現在はOBS。将来のDAVE映像直接受信と差し替える境界
+    obs_source_name: Discord画面共有  # Discord共有画面を取り込むOBSソース名
+    max_output_tokens: 240    # ゲーム名・状況・画面内文字を省略せず返す共有画面専用上限
+    capture_max_width: 1280   # Discord UI内の小さい共有映像・文字を潰さない詳細幅
+    minecraft_source_name: null # nullならvideo.obs.source_name（既定「マイクラ」）を使う
+    minecraft_max_output_tokens: 220 # 構造化JSONが途中切れしない最小余裕。切れると状態・イベントを利用できない
+    minecraft_capture_max_width: 768 # HUD判別を保ちつつ12B映像prefillを軽量化
+    capture_fps: 1.0          # 最新フレーム優先。全フレームをLLMへ送らない
+    max_frames_per_analysis: 1
+    fresh_on_explicit_query: true
+    explicit_wait_timeout_sec: 2.5  # 明示質問で待てる追加時間。超過時は時刻付き直近状態
+    direct_answer_timeout_sec: 18.0 # 「今」の質問は撮り直した1枚を待ち、二重LLM生成せず直接回答
+    reasoning_refresh_timeout_sec: 6.5 # 持ち物・攻略判断はここまで最新画面を待ち、以後は時刻付き状態+知識で会話生成
+
+music_recognition:            # 実音源の曲名認識。明示要求時だけ直近音声を外部APIへ送信
+  enabled: true               # true にして AUDD_API_TOKEN 環境変数を設定すると有効
+  provider: audd
+  token_env: AUDD_API_TOKEN
+  capture_source: loopback     # ローカルは本人マイクでなくWindowsの再生音をAudDへ送る
+  loopback_device: null        # null=Windows既定の出力。外部YouTubeが鳴る出力endpoint IDも指定可能
+  live_capture_seconds: 8.0    # 質問後、この秒数だけ現在の再生音を取得（内蔵プレイヤーは既知曲名を即答）
+  capture_seconds: 12.0        # Discord受信音声の直近保持時間（互換設定）
+  min_audio_seconds: 5.0
+  min_rms: 0.003               # これ未満は無音としてAPIへ送らない
+  timeout_s: 12.0
+
+humming_recognition:          # 鼻歌・口笛の曲名認識 (ACRCloudのHumming対応プロジェクトが必要)
+  enabled: false
+  host: None                     # ACRCloudダッシュボードの Host (例: identify-eu-west-1.acrcloud.com)
+  access_key_env: ACRCLOUD_ACCESS_KEY
+  access_secret_env: ACRCLOUD_ACCESS_SECRET
+  min_audio_seconds: 3.0
+  min_rms: 0.008
+  timeout_s: 15.0
+  arm_timeout_s: 20.0
+
+music:                        # 音楽再生 (VCで「〇〇流して/止めて/次」)。要 yt-dlp + FFmpeg
+  enabled: true
+  default_query: 作業用BGM     # 曲名を言わず「なんか流して」のときに検索する語
+  intent_planner_enabled: true # LLMが文脈上の実行依頼かを判断してから操作する
+  intent_planner_timeout_s: 5.0 # 意図判定の待機上限。失敗時は安全な規則判定へ戻す
+
+speaker:                      # 話者識別 (声で相手を覚える)
+  enabled: true
+  device: cpu                 # 声紋モデルの実行デバイス (CPUで1秒弱・VRAM消費なし)
+  model: full                 # full=フル精度(約380MB・高精度) / quantized=軽量(約100MB・精度低)
+                              # ※変更すると声紋の互換性がなくなり話者リストはリセットされる
+  threshold: 0.70             # これ以上の類似度=確実に同一人物 (声紋を追加学習)
+  new_threshold: 0.50         # これ未満=明らかに別人 (新規ゲスト登録)。中間は「一番近い人」扱い
+  # 会話中に話者名が入れ替わるのを防ぐヒステリシス。声紋スコアはターン毎に数%揺れるため、
+  # 直近に話した人を優先し、他人がこの差以上に上回った時だけ切り替える。
+  sticky_window_s: 90.0       # 直近この秒数以内に話した人を「継続中の話者」とみなす
+  sticky_margin: 0.08         # 乗り換えに必要な類似度の差。0にするとヒステリシス無効
+  # 同一人物が場面ごとに別プロファイルになるのを検出して統合を提案する閾値。
+  # 例: ローカルマイクで「チビ」、Discordのニックネームで「ジーレン」として
+  # 別々に登録されると、なかよし度も会話プロファイルも2人分に分裂する。
+  merge_suggestion_threshold: 0.82  # この一致度以上の組をこころ画面で提案 (自動統合はしない)
+  ask_name: true              # 名前を知らない相手には会話の流れで名前を聞く
+  timeout_s: 4.0              # 識別の時間制限 (超えたら前回の相手として続行)
+  migrate_legacy_shared_once: true  # 旧 speakers.json は現在のペルソナへ一度だけ引継ぎ、以後はペルソナ別に分離
+
+# ============================================================
+# 認知カーネル（行動選択層）
+#
+# 文章を作る前に「何をするか」を決める層。話す以外の選択肢——黙る、聞き返す、
+# 警告する、中断した話を再開する、覚えるだけ——が構造として存在しなかったので、
+# それを候補として比べられるようにしたもの。
+#
+#   入力 → 状況解釈 → 内部状態参照 → 行動候補 → 行動選択
+#        → 応答計画 → 言語化 → 結果評価 → 状態更新
+#
+# 【既定オフ】既存の動作を変えないため。true にすると通常発話がこの層を
+# 通ってから Conversation Planner へ渡る。反射（VAD・割り込み・TTS停止）は
+# ここを通らない——待たせたら割り込みが効かなくなる。
+#
+# 落ちた場合は旧経路で続行するので、会話は止まらない（第17条）。
+# ============================================================
+cognition:
+  # 【止め方は1つ】false にすれば rollout_mode に関わらず従来経路。
+  enabled: false
+  # どこまで効かせるか。**いきなり全環境で常時ONにしない。**
+  #   disabled          : 従来経路
+  #   test_session      : 明示的に始めたテストセッション中だけ
+  #   profile_allowlist : 下の profiles に挙げたプロファイルだけ
+  #   enabled           : 通常動作で有効
+  # 実機で試す時の推奨は enabled: true + rollout_mode: test_session。
+  rollout_mode: disabled
+  profiles: []
+  # 「もういいよ」への構え。**固定ルールではなく候補への小さな加点**。
+  # どちらが自然かは聞いてみないと分からないので、実機で切り替えて比べる。
+  #   adaptive / silent_preferred / brief_ack_preferred
+  closure_response_policy: adaptive
+  # 黙ると決めた直後に、同じ話題を自分から蒸し返さないための待ち時間。
+  # 時間だけでなく topic_id も見る（別件なら話しかけてよい）。
+  silence_quiet_seconds: 20
+  # 行動候補の点数の重み。**ここ以外に書かない**（既定は
+  # neuro_voice/cognition/kernel.py の WEIGHTS）。
+  # 実機で回してみないと妥当な値が分からないので、差し替えられるようにしてある。
+  weights: {}
+    # safety: 1.8          # 危険の警告を通常会話より優先する強さ
+    # uncertainty_penalty: 1.3  # 聞き取れていないのに断定することへの罰
+    # repetition_penalty: 0.5   # 同じ行動（特に質問）の連投を抑える強さ
+  # 1ターンの認知処理を logs/cognitive_trace.jsonl へ1行1JSONで残す。
+  # 状態の数値・候補の点数・選んだ理由・所要時間だけで、**会話本文もプロンプトも
+  # 思考過程も残さない**（第12条）。既定オフ。通常動作でログを増やさないため。
+  trace:
+    # **2026-08-04 に有効化。** ペルソナ分離の観測点
+    # (retrieved_memory_persona_ids / cross_persona_rejection_count /
+    # persona_switch_state など) は、ここが false だと**どこにも残らない**。
+    # 会話本文もプロンプトも思考過程も書かない（第12条）ので、
+    # 増えるのは1ターン1行の JSON だけ。
+    enabled: true
+    path: logs/cognitive_trace.jsonl
+
+# エピソード記憶 (Phase 3)。**保存先は既存の mind_*.db のまま**で、
+# 新しい記憶基盤は作っていない。memories テーブルへ列を足しただけ。
+#
+# 【段階的に上げること】3つとも既定 false。順番は
+#   1. episodic_enabled  … 覚えるだけ。行動は何も変わらない
+#   2. retrieval_enabled … 思い出して行動候補の点数へ効かせる
+#   3. reflection_enabled… 複数の経験から会話戦略の仮説を作る
+# 一度に全部上げると、おかしくなった時にどれが原因か分からない。
+memory:
+  # 重要な経験だけをエピソードとして保存する。
+  # 挨拶・相づち・重複・低確信のASRは、ここが true でも保存されない。
+  episodic_enabled: true
+  # 検索だけを実機確認する間の独立した書込みゲート。false ではエピソード、
+  # 強化、検索時の access 更新、会話 transcript を DB に書かない。
+  write_enabled: false
+  # 想起。**探す理由がある時だけ**引く（過去への言及・未完了の約束・
+  # 打ち切りの合図・固有名詞）。毎ターン全記憶を取得はしない。
+  retrieval_enabled: true
+  # 複数の経験から CONVERSATION_STRATEGY の仮説を1つ作る。
+  # 会話が止まっている間にだけ走り、**次のターン以降**にしか効かない。
+  reflection_enabled: false
+  # 過去の記憶を**人物単位**で引く (Phase 6F)。
+  #
+  # 記憶は speaker_id で保存されている。**書き換えない**——
+  # 検索側で「この人物はどの speaker_id か」を束ねるだけ。
+  # 束ねても返す件数は増やさない（`max_retrieved` は同じ）。
+  identity_scope_retrieval_enabled: false
+  # 正式な結果は従来どおりにして、人物単位との**差だけ測る**。
+  identity_scope_shadow_read_enabled: false
+  # 1ターンで Planner へ渡す記憶の上限。生の会話履歴は渡さない。
+  max_retrieved: 3
+  # 順位付けの対象にする件数。DBを毎回全部読まないための上限。
+  scan_limit: 200
+  # これ未満の価値しかない候補は保存しない（importance だけでは決めない。
+  # cognition/episodic.py の MemoryCandidate.value を参照）。
+  min_value: 0.45
+  # 既存記憶とこれ以上似ていたら、新規保存せず REINFORCE / UPDATE する。
+  duplicate_similarity: 0.78
+  # これ未満の確信の推論は恒久記憶にせず、仮説（low_priority）として置く。
+  hypothesis_confidence: 0.60
+  # 仮説を作るのに要る重要エピソードの件数。**1件では作らない。**
+  reflection_min_episodes: 8
+
+# 持続する内面 (Phase 4)。**新しい感情モデルは作っていない。**
+# 既存の TemporalSelf(声の表情づけ) と RelationshipStore(相手ごと17軸) は
+# そのまま持ち主で、ここは行動選択用の短期感情(RAMのみ)を足して繋ぐだけ。
+#
+# 【段階的に上げること】5つとも既定 false。順番は
+#   1. enabled           … 状態計算とトレースだけ。行動は変わらない
+#   2. affect_enabled    … 出来事から短期感情が動く
+#   3. (2の後) Action Selector への補正が効き始める
+#   4. planner_expression_enabled     … 口調・返答量へ反映
+#   5. relationship_updates_enabled   … 長期の関係値を書く
+#   6. preference_updates_enabled     … 好みを連続値で持つ
+internal_state:
+  # 止め方は1つ。false なら他を何にしても効かない。
+  enabled: false
+  # 出来事の意味評価から短期感情を動かす。RAMのみで再起動すると消える。
+  affect_enabled: false
+  # **長期の関係値を書く。** 不明話者では書かない。いちばん最後に上げること
+  # ——ここだけが元へ戻せない（ファイルに残る）。
+  relationship_updates_enabled: false
+  # 好みを連続値と根拠で持つ。「一度楽しかった」で大好きにはならない。
+  preference_updates_enabled: false
+  # Planner へ口調・距離感・返答量の粗いラベルを渡す。
+  planner_expression_enabled: false
+
+# 自分から話す (Phase 5)。**既定では止まっている。**
+#
+# 【段階的に上げること】
+#   1. enabled        … 注意イベントを取り込み、機会を作り、トレースへ残すだけ。
+#                       **発話の判断は変わらない**（従来どおり autonomy が決める）
+#   2. speech_enabled … 自発発話とゲーム実況が Action Selector を通る。
+#                       ここを上げると**沈黙が選ばれて喋らないターンが出る**
+#
+# speech_enabled は cognition.enabled が true でないと効かない。認知層が
+# 止まっているのに自発発話だけ通すと、沈黙の決定も記憶の補正も掛からない
+# 発話が復活するため。
+initiative:
+  # 【段階1を有効化】2026-08-02。**行動は変わらない。**
+  # 注意イベントを取り込み、機会を作り、トレースへ残すところまで。
+  # 発話を決めるのは従来どおり autonomy（speech_enabled が false のため）。
+  enabled: true
+  # **これを上げると挙動が変わる。** 段階1のトレースを読んでから。
+  speech_enabled: false
+  # 段階ごとの入り切り。**下の順に1つずつ上げる。**
+  #   attention        … 注意イベントの取り込み（enabled と一緒に効く）
+  #   game_commentary  … ゲームイベント起点の実況候補（最初の垂直スライス）
+  #   memory_initiative… 記憶起点の候補（未完了の約束・明示された好み）
+  #   idle_initiative  … 沈黙中の会話再開
+  attention_enabled: true
+  game_commentary_enabled: false
+  memory_initiative_enabled: false
+  idle_initiative_enabled: false
+  # **既定 true。** 止める理由は普通は無い——止めると
+  # 「相手が話し始めたのに喋り出す」が復活する。
+  pre_speech_revalidation_enabled: true
+  # 注意イベントの間引き。ここ未満の重要度は候補にしない
+  # （危険と直接質問は例外で、重要度では落とさない）。
+  min_salience: 0.15
+  # 同じ deduplication_key を再び受け付けるまでの秒数。
+  dedup_window_s: 4.0
+  # 注目対象の乗り換えに要る差と、乗り換え直後に動かさない時間。
+  switch_margin: 0.05
+  min_dwell_s: 1.5
+  # 同じ危険を叫び直すまでの秒数（別の危険は止めない）。
+  warn_repeat_s: 6.0
+  # ここまで Phase 5。以下は Phase 6。
+  # 話しすぎの予算。**回数だけでなく重さも数える** —— 回数だけだと
+  # 長い実況を連発しても引っかからない。
+  budget:
+    window_s: 120.0
+    max_utterances: 4
+    max_same_topic: 2
+    cooldown_s: 8.0
+    max_cost: 3.0
+
+# いまどうなっているか (Phase 6)。**完全な世界シミュレーションではない。**
+#
+# Phase 3 の記憶は「過去に何が起きたか」、ここは「現在どうなっているか」。
+# 記憶は増えていくが、現在状況は**古くなって消える**。性質が違うので
+# 同じ入れ物へ入れない。
+#
+# 【段階的に上げること】
+#   1. enabled                … 状態を持つだけ。トレースで中身を見る
+#   2. entity_tracking_enabled… 人・物・場所を追う
+#   3. fact_tracking_enabled  … 「いまこうなっている」を持つ
+world_state:
+  enabled: false
+  entity_tracking_enabled: false
+  fact_tracking_enabled: false
+  # 実イベントからの取り込み (Phase 6B)。**上げる順は下から。**
+  #   observation_wiring → speaker → game → vision → persistence
+  observation_wiring_enabled: false
+  speaker_observation_enabled: false
+  vision_observation_enabled: false
+  game_observation_enabled: false
+  # 入力元ごとの差を埋める (Phase 6C)。**1つずつ上げる。**
+  #   discord_presence: VCの入退室 → 誰が居るか
+  #     参加状態の変化から直接発話はしない。注意層まで。
+  #   vision_scene_parity: 画面の種類を複数扱い、変化を捉える
+  #     種類は vision/service.py のプロンプトが出すものだけ
+  #   ktane: 爆弾解除の状態と目標。**会話由来のみ、画面は見ない**
+  discord_presence_enabled: false
+  vision_scene_parity_enabled: false
+  ktane_observation_enabled: false
+  # 画面から取る2種類目の事実 (Phase 6D)。既存プロンプトの
+  # `player_state.health_estimate` を low/medium/high へ落として持つ。
+  # **画面は正本ではない**ので、確信で比べたうえで入れる。
+  extended_vision_fact_enabled: false
+  # 世界状態の保存。**一時的な事実は起動時に古い扱いへ落ちる。**
+  persistence_enabled: false
+
+# 誰なのか (Phase 6D)。**接続・声紋・人物を別々に持つ。**
+#
+# 1つの番号が3つの違うことを意味していると、声紋が一度外れただけで
+# 関係値が別人へ移る。移った先が正しいか確かめる手がかりも残らない。
+identity:
+  # 出来事ごとに人物を1回だけ決める層。
+  resolution_enabled: false
+  # Discord のように接続が正本と分かっている音声から、声紋の根拠を積む。
+  # **1回では確定しない。** 3回以上の一致が要る。
+  voice_transport_linking_enabled: false
+  # **既定 true。** 取り消せない統合を作る理由が無い。
+  # 誤統合は物理削除せず、REVOKED として残して繋ぎ直す。
+  reversible_links_enabled: true
+
+# いま誰が居るのか (Phase 6D)。
+#
+# **接続が保証する人数と、声から推した人数を分ける。**
+# 混ぜると「たぶん3人」が「3人です」として出てくる。
+presence:
+  registry_enabled: false
+  # Local マイクには参加者一覧が無い。声から推し量るが、**確定はしない。**
+  # これは実装の不足ではなく環境の制約。確定人数として表示・保存しない。
+  local_estimation_enabled: false
+
+# 関係値の主キーを speaker_id から person_id へ移す (Phase 6E)。
+#
+# **既存データは消さない。** ロールバックは読む先を戻すだけ。
+# mode は下から順に上げる:
+#   disabled → shadow_read → dual_write → person_primary
+#   問題があれば legacy_rollback でいつでも戻せる
+#
+# 個別フラグと mode が食い違ったら**弱い方**を採る。
+# 強い方へ倒すと、間違えて上げた1つのフラグで person 側が正式採用になる。
+identity_migration:
+  enabled: false
+  mode: disabled
+  shadow_read_enabled: false
+  dual_write_enabled: false
+  person_primary_enabled: false
+  # 🩺 に移行の区画を出すか。**新しい管理画面は作っていない。**
+  ui_enabled: false
+  # 何も変えずに「移せるか」だけ見る。**既定で許可**——安全なので。
+  dry_run_enabled: true
+
+# 短い計画 (Phase 7)。
+#
+# **自由な長期自律目標は作らない。** ここが作れるのは、Goal から出た
+# 1〜3手の手順だけ。4手以上は計画ではなく自律行動になる。
+planning:
+  enabled: false
+  bounded_plans_enabled: false
+  max_steps: 3
+  # 作り直してよい回数。**同じ失敗を繰り返したら、そこで止める。**
+  max_replans: 1
+
+# 道具の実行 (Phase 7)。
+#
+# **実機確認が終わるまで全部 false。** 特に外部書き込みと破壊操作は、
+# 人物取り違えと Rollback を実機で確かめてからでないと有効にしない。
+#
+# 有効化の順番:
+#   1. 計画と Trace だけ (planning.enabled)
+#   2. READ_ONLY を1種類 (read_only_enabled + tools.web_search_enabled)
+#   3. Outcome Verification
+#   4. 永続化 (persistence_enabled)
+#   5. 試験用の書き込み＋確認 (tools.test_scratch_enabled + confirmation)
+#   6. 声での確認 (confirmation.voice_confirmation_enabled)
+#   7. 限定的な実ツール書き込み
+#   8. 通常利用
+tool_execution:
+  enabled: false
+  read_only_enabled: false
+  external_write_enabled: false
+  destructive_enabled: false
+  persistence_enabled: false
+  # ツールごとの可否。**台帳にあっても、ここが false なら実行されない。**
+  tools:
+    web_search_enabled: false
+    game_state_enabled: false
+    vision_enabled: false
+    # 試験用。作業フォルダの中だけ。**本番のサービスへは触らない。**
+    test_scratch_enabled: false
+
+# 実行前の確認 (Phase 7)。
+#
+# **確認は、確認した操作にだけ効く。** 引数が変わったら取り直す。
+# 一度の実行で使い切る。別人の了承は流用しない。
+confirmation:
+  enabled: false
+  voice_confirmation_enabled: false
+  # 確認が生きている秒数。長すぎると状況が変わってから実行される。
+  ttl_seconds: 120
+
+# 道具の結果を会話へ戻す (Phase 7B)。
+#
+# **一度に全部を有効にしない。** 推奨順:
+#   1. テスト環境で result_dialogue
+#   2. Local の読み取り専用ツール
+#   3. Local 音声で結果報告
+#   4. test_scratch 書き込み
+#   5. Discord の読み取り専用ツール
+#   6. Discord 音声で結果報告
+#   7. bounded replan
+tools:
+  # 結果を Action Selector の候補へ載せる。false なら Phase 7 と同じ
+  # ——実行して記録するところで止まる。
+  result_dialogue_enabled: false
+  # Discord から道具を使う。**同じ Tool Gate を通る。**
+  discord_enabled: false
+  # 試験用の実書き込み。root が空なら、この値に関係なくツールは動かない。
+  test_scratch_enabled: false
+  # **書き先を明示する。** 既定を勝手に決めない——「試したつもり」が
+  # 本物のプロジェクトファイルの隣に落ちる。
+  test_scratch_root: ""
+  # 回復可能な読み取り失敗だけ、最大1回作り直す。
+  bounded_replan_enabled: false
+
+# 1ターンの追跡・重複防止・ペルソナ分離 (Phase 7C)。
+#
+# 実機で3つ出た: 同じ文の繰り返し / 応答開始の悪化 / ペルソナ変更後の
+# 旧ペルソナらしい反応。**推測で3つ同時に直さない**ための計測と、
+# 直した分の切り戻し口。
+turn_integrity:
+  # 1ターンを同じ turn_id で追う。**会話全文は残さない**——
+  # 正規化した文章のハッシュ・文数・文字数・隣接文類似度だけ。
+  # **これを true にすると、次に重複が出た時に「どの層で増えたか」が
+  # 🩺 と latency ログへ残る。** 有効でも発話の挙動は変わらない
+  # （記録するだけ。止めるのは下の duplicate_suppression_enabled）。
+  turn_frame_enabled: true
+  # 覚えておくターン数と、確定台帳の容量。
+  frame_capacity: 64
+  commit_capacity: 256
+  # **重複を検出したら、その発話を止める。**
+  # 既定は false。原因が分からないうちに止めると、重複の代わりに
+  # 欠落が出て、しかも今度は記録も残らない。turn_frame_enabled で
+  # 層を特定してから上げること。
+  duplicate_suppression_enabled: false
+  # 工程別のレイテンシを取る。p50/p90/p95 を出すのに要る。
+  latency_profiling_enabled: false
+  # 何ターン分ためるか。
+  latency_capacity: 200
+  # 最初の数ターンを集計から外す。**モデルの初回読み込みを含めた
+  # 数字で「遅い」と言わない。**
+  latency_warmup_turns: 3
+
+  # 明らかな Tool Intent が無いターンで、ツール処理を起動しない。
+  # **既定で有効。** 何もしないのが正しい既定なので、上げないと
+  # 通常会話が払い続ける。
+  skip_tool_path_without_intent: true
+
+  # 隣り合う、ほぼ同一の文だけを1つにする最終防御。
+  # **根本原因の修正の代わりにしない。** 原因を直したうえで、
+  # それでも出る分だけを畳む。
+  collapse_adjacent_duplicates: false
+
+  # ペルソナのスコープを効かせる。DB 検索の時点で人格を絞る。
+  persona_scope_enabled: true
+  # 所有者もスコープも無い古い記憶を出すか。
+  # **既定は出さない。** 「たぶん誰のでもない」で全ペルソナへ
+  # 公開すると、実際には誰かの私的な記憶だったものが漏れる。
+  # 逆（見えなさすぎる）は「覚えていない」で済むが、こちらは戻せない。
+  allow_legacy_unscoped_memory: false
+  # ペルソナ切替で会話履歴を捨てる。**旧ペルソナの AI 発話を
+  # 新ペルソナの履歴として渡さない。**
+  drop_history_on_persona_switch: true
+
+# 共有している目標と未完了の約束 (Phase 6)。
+#
+# **ポッポが自分で長期目標を作ることはない。** 登録できるのは
+# ユーザーが明示した／承認した／明示的な共同作業／自分が引き受けた約束／
+# ゲームプロフィールが定義するもの、の5つだけ。
+#
+# 【段階的に上げること】
+#   1. enabled                       … 目標を持つだけ
+#   2. obligation_integration_enabled… 既存の未完了事項と繋ぐ
+#   3. next_action_enabled           … 次の小さな行動候補を出す
+goals:
+  enabled: false
+  obligation_integration_enabled: false
+  next_action_enabled: false
+  # 目標の保存。**再起動後、ACTIVE は PAUSED として戻る**——状態を
+  # 確かめる前に動き出さないため。
+  persistence_enabled: false
+  # 既存の未完了事項（WorkingMemory.open_questions）との橋。
+  obligation_bridge_enabled: false
+  # 同時に抱える ACTIVE な目標の上限。抱えすぎるとどれも進まない。
+  max_active: 5
+
+# 行動の許可 (Phase 6B)。**すべてを AUTOMATIC にしない。**
+#
+# 種類ごとに判定し、分からないものは確認を求める側へ倒す。
+# 判定は必ずコード側（`goals.decide_permission`）で、Planner の文章では
+# 決めない。
+permissions:
+  enforcement_enabled: false

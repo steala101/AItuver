@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0a0d16">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Neuro遠隔">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/icon-192.png">
+  <link rel="stylesheet" href="/styles.css">
+  <title>Neuro 遠隔ランチャー</title>
+</head>
+<body>
+  <div id="app" class="app" aria-live="polite">
+    <!-- ログイン画面 -->
+    <section id="loginView" class="view hidden">
+      <div class="brand">
+        <div class="orb"></div>
+        <h1>Neuro <span>遠隔</span></h1>
+      </div>
+      <p class="lead">管理トークンでログインしてください。</p>
+      <form id="loginForm" class="card" autocomplete="off">
+        <label class="field">
+          <span>管理トークン</span>
+          <input id="tokenInput" type="password" inputmode="text"
+                 autocomplete="off" placeholder="REMOTE_LAUNCHER_ADMIN_TOKEN">
+        </label>
+        <button id="loginBtn" class="btn primary" type="submit">ログイン</button>
+        <p id="loginError" class="msg error hidden"></p>
+      </form>
+      <p class="hint">Tailscaleネットワーク内からのみアクセスできます。</p>
+    </section>
+
+    <!-- メイン画面 -->
+    <section id="mainView" class="view hidden">
+      <header class="topbar">
+        <div class="brand small">
+          <div class="orb" id="statusOrb"></div>
+          <h1>Neuro <span>遠隔</span></h1>
+        </div>
+        <button id="logoutBtn" class="btn ghost tiny" type="button">ログアウト</button>
+      </header>
+
+      <div id="offlineBanner" class="banner hidden">
+        ⚠ ランチャーに接続できません。Tailscale接続を確認してください。
+      </div>
+
+      <!-- 状態カード -->
+      <div class="card status">
+        <div class="row"><span class="k">ランチャー</span><span class="v" id="stLauncher">-</span></div>
+        <div class="row"><span class="k">AIアシスタント</span><span class="v" id="stApp">-</span></div>
+        <div class="row"><span class="k">Discord</span><span class="v" id="stDiscord">-</span></div>
+        <div class="row"><span class="k">サーバー</span><span class="v" id="stGuild">-</span></div>
+        <div class="row"><span class="k">ボイスチャンネル</span><span class="v" id="stChannel">-</span></div>
+        <div class="row sub"><span class="k">実行中の処理</span><span class="v" id="stOp">-</span></div>
+        <div class="row sub"><span class="k">最後の操作</span><span class="v" id="stLastOp">-</span></div>
+        <div class="row sub"><span class="k">最後のエラー</span><span class="v" id="stLastErr">-</span></div>
+        <div class="row sub"><span class="k">最終更新</span><span class="v" id="stUpdated">-</span></div>
+      </div>
+
+      <!-- 接続先選択 -->
+      <div class="card">
+        <label class="field">
+          <span>ボイスチャンネル</span>
+          <div class="selectrow">
+            <select id="channelSel"><option value="">(既定 / 自動)</option></select>
+            <button id="refreshChBtn" class="btn ghost tiny" type="button" title="一覧を更新">⟳</button>
+          </div>
+        </label>
+      </div>
+
+      <!-- ワンタッチ -->
+      <div class="actions">
+        <button id="startJoinBtn" class="btn primary big" type="button">
+          <span class="ico">▶</span> 起動して参加
+        </button>
+        <button id="leaveStopBtn" class="btn danger big" type="button">
+          <span class="ico">■</span> 退出して終了
+        </button>
+        <button id="refreshBtn" class="btn ghost" type="button">状態を更新</button>
+      </div>
+
+      <!-- AI設定 (ペルソナ・話者・こころ) -->
+      <details class="advanced" id="aiSection">
+        <summary>AIの設定 (ペルソナ・声・こころ)</summary>
+        <div class="card soft">
+          <label class="field">
+            <span>ペルソナ</span>
+            <div class="selectrow">
+              <select id="personaSel"><option value="">-</option></select>
+              <button id="applyPersonaBtn" class="btn ghost tiny" type="button">切替</button>
+            </div>
+          </label>
+          <label class="field">
+            <span>声 (話者)</span>
+            <div class="selectrow">
+              <select id="speakerSel"><option value="">-</option></select>
+              <button id="applySpeakerBtn" class="btn ghost tiny" type="button">変更</button>
+            </div>
+          </label>
+          <button id="mindBtn" class="btn ghost" type="button">💠 こころステータスを見る</button>
+          <p class="hint left">AI本体の起動中のみ操作できます。</p>
+        </div>
+      </details>
+
+      <!-- システム設定 (音声認識・読み上げ) -->
+      <details class="advanced" id="systemSection">
+        <summary>システム設定 (音声認識・読み上げ)</summary>
+        <div class="card soft">
+          <div class="runtime" id="runtimeBox">
+            <div class="rt-row"><span>音声認識</span><b id="rtStt">-</b></div>
+            <div class="rt-row"><span>読み上げ</span><b id="rtTts">-</b></div>
+            <div class="rt-row"><span>頭脳 (LLM)</span><b id="rtLlm">-</b></div>
+            <div class="rt-row"><span>GPUメモリ</span><b id="rtGpu">-</b></div>
+          </div>
+          <div class="field">
+            <span>音声認識 (STT) の処理デバイス</span>
+            <div class="seg" id="sttSeg">
+              <button type="button" data-dev="cuda">GPU</button>
+              <button type="button" data-dev="cpu">CPU</button>
+            </div>
+            <div class="devstate">
+              <span>実稼働: <b id="sttActual">-</b></span>
+              <span id="sttModel" class="muted"></span>
+            </div>
+            <p id="sttWarn" class="msg warn hidden">⚠ GPU指定なのにCPUで動いています (CUDA初期化に失敗)。ドライバ/VRAMを確認してね。</p>
+          </div>
+
+          <label class="field">
+            <span>読み上げ音量 <b id="ttsVolLabel">-</b></span>
+            <input id="ttsVol" class="range" type="range" min="0" max="150" step="5" value="100">
+          </label>
+
+          <div class="field">
+            <span>読み上げエンジン (TTS)</span>
+            <div class="seg" id="ttsSeg">
+              <button type="button" data-eng="style_bert_vits2">Style-Bert-VITS2</button>
+              <button type="button" data-eng="voicevox">VOICEVOX</button>
+            </div>
+            <div class="devstate"><span>現在: <b id="ttsEngineNow">-</b></span></div>
+            <p class="hint left">切替時、使わない方のサーバーを停止してVRAMを解放します。切替には数秒かかります。</p>
+          </div>
+          <p class="hint left">AI本体の起動中のみ操作できます。</p>
+        </div>
+      </details>
+
+      <!-- 詳細操作 -->
+      <details class="advanced">
+        <summary>詳細操作 (トラブルシューティング)</summary>
+        <div class="grid2">
+          <button class="btn ghost" data-act="app-start" type="button">本体のみ起動</button>
+          <button class="btn ghost" data-act="app-stop" type="button">本体のみ終了</button>
+          <button class="btn ghost" data-act="join" type="button">VCのみ参加</button>
+          <button class="btn ghost" data-act="leave" type="button">VCのみ退出</button>
+        </div>
+      </details>
+
+      <!-- こころステータス モーダル -->
+      <div id="mindOverlay" class="overlay hidden">
+        <div class="sheet">
+          <div class="sheet-head">
+            <h2 id="mindName">こころ</h2>
+            <button id="mindClose" class="btn ghost tiny" type="button">閉じる</button>
+          </div>
+          <div id="mindBody" class="sheet-body"></div>
+        </div>
+      </div>
+
+      <p id="toast" class="toast hidden"></p>
+    </section>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

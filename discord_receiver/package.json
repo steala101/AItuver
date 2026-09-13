@@ -1,0 +1,17 @@
+{
+  "name": "aituber-discord-dave-receiver",
+  "private": true,
+  "version": "0.1.0",
+  "description": "DAVE-capable Discord PCM receiver sidecar for AItuber",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node receiver.js"
+  },
+  "dependencies": {
+    "@projectdysnomia/dysnomia": "github:projectdysnomia/dysnomia#dev",
+    "@snazzah/davey": "0.1.12",
+    "opusscript": "0.1.1",
+    "sodium-native": "5.1.0",
+    "ws": "8.18.3"
+  }
+}
